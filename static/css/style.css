@@ -1,0 +1,158 @@
+/* Custom styles for Market Interpreter Dashboard */
+
+body {
+    background-color: #f5f5f5;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.card {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    border: none;
+    margin-bottom: 20px;
+}
+
+.card-header {
+    font-weight: 600;
+}
+
+.progress {
+    height: 10px;
+    border-radius: 5px;
+}
+
+/* Chart styling */
+.chart-container {
+    position: relative;
+    margin: auto;
+    height: 100%;
+    width: 100%;
+}
+
+canvas {
+    max-width: 100% !important;
+}
+
+/* Fix for expanding chart issue */
+#pcChart, #historyChart {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+.footer {
+    background-color: #f8f9fa;
+    padding: 15px 0;
+    margin-top: 30px;
+}
+
+/* Market regime badges */
+.badge {
+    padding: 8px 12px;
+    font-weight: 500;
+}
+
+/* Table styles */
+.table-responsive {
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+.table th {
+    position: sticky;
+    top: 0;
+    background-color: #f8f9fa;
+    z-index: 1;
+}
+
+/* Update button */
+#manual-update {
+    cursor: pointer;
+}
+
+#manual-update:disabled {
+    cursor: not-allowed;
+}
+
+/* Sidebar styles */
+.card-subtitle {
+    color: #495057;
+    font-weight: 600;
+}
+
+ul.small li {
+    margin-bottom: 8px;
+}
+
+/* Strategy cards */
+.card-body p strong {
+    color: #0d6efd;
+}
+
+.card-body ul {
+    padding-left: 1rem;
+}
+
+.text-success strong {
+    color: #28a745 !important;
+}
+
+.text-danger strong {
+    color: #dc3545 !important;
+}
+
+.text-warning strong {
+    color: #ffc107 !important;
+}
+
+/* Market Data card */
+.card-body .d-flex .text-muted {
+    color: #6c757d;
+    font-weight: 500;
+}
+
+.card-body .d-flex strong {
+    font-weight: 600;
+}
+
+/* Media queries for responsive design */
+@media (max-width: 768px) {
+    .card-title {
+        font-size: 1.2rem;
+    }
+    
+    .card-header h5 {
+        font-size: 1.1rem;
+    }
+    
+    .badge {
+        font-size: 0.8rem !important;
+    }
+    
+    .chart-container {
+        height: 200px;
+    }
+    
+    /* Make sidebar full width on mobile */
+    .col-md-4 {
+        margin-top: 15px;
+    }
+    
+    .card-body ul.small li {
+        font-size: 0.9rem;
+    }
+}
+
+/* Extra small screens */
+@media (max-width: 576px) {
+    .container {
+        padding-left: 10px;
+        padding-right: 10px;
+    }
+    
+    .card-body {
+        padding: 1rem;
+    }
+    
+    .card-body ul.small li {
+        font-size: 0.85rem;
+    }
+} 

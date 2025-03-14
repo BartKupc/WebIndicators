@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Market Condition Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Use JavaScript for controlled refreshing instead of meta refresh -->
+    <script>
+        // Refresh the page every 5 minutes (300000 ms)
+        setTimeout(function() {
+            // Only reload if not actively interacting with the page
+            if (!document.querySelector('input:focus, textarea:focus, select:focus')) {
+                window.location.reload();
+            }
+        }, 300000);
+    </script>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="/">Market Interpreter</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/">Dashboard</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/history">History</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/update" id="manual-update">Update Now</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h4 class="mb-0">{% block page_title %}Market Condition Dashboard{% endblock %}</h4>
+                        <div>
+                            <p class="text-muted mb-0">Last Updated: <span id="lastUpdated">{{ market_data.last_updated }}</span></p>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        {% block content %}{% endblock %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="footer mt-5 py-3 bg-light">
+        <div class="container text-center">
+            <span class="text-muted">Market Condition Interpreter &copy; {{ now.year }}</span>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Add AJAX functionality to the manual update button
+        const updateButton = document.getElementById('manual-update');
+        if (updateButton) {
+            updateButton.addEventListener('click', function(e) {
+                e.preventDefault();
+                
+                // Create loading indicator
+                updateButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Updating...';
+                updateButton.disabled = true;
+                
+                // Perform AJAX request
+                fetch('/update')
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.status === 'success') {
+                            // Reload the page after successful update
+                            window.location.reload();
+                        } else {
+                            alert('Update failed: ' + data.message);
+                            updateButton.innerHTML = 'Update Now';
+                            updateButton.disabled = false;
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        updateButton.innerHTML = 'Update Now';
+                        updateButton.disabled = false;
+                    });
+            });
+        }
+    });
+    </script>
+    
+    {% block scripts %}{% endblock %}
+</body>
+</html> 
