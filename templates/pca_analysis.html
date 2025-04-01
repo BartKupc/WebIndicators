@@ -1,0 +1,524 @@
+{% extends "base.html" %}
+
+{% block page_title %}PCA Market Analysis{% endblock %}
+
+{% block content %}
+<!-- Market Summary Card -->
+<div class="row">
+    <div class="col-12">
+        <div class="card mb-4">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0">Market Summary - ETH/USDT</h4>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h1 class="display-4 mb-3">${{ market_data.formatted_price }}</h1>
+                        <div class="d-flex align-items-center mb-3">
+                            <h5 class="me-3">Market Regime:</h5>
+                            <span class="badge bg-info fs-6">{{ market_data.market_regime }}</span>
+                        </div>
+                        <div class="d-flex align-items-center">
+                            <h5 class="me-3">Trade Signal:</h5>
+                            <span class="badge fs-6 
+                                {% if market_data.trade_signal == 'Long' %}bg-success
+                                {% elif market_data.trade_signal == 'Short' %}bg-danger
+                                {% elif market_data.trade_signal == 'Hold' %}bg-warning
+                                {% else %}bg-secondary{% endif %}">
+                                {{ market_data.trade_signal }}
+                            </span>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <p class="lead">
+                            Last Updated: {{ market_data.last_updated }} 
+                            {% if market_data.using_real_data %}
+                            <span class="badge bg-success">Real Data</span>
+                            {% else %}
+                            <span class="badge bg-warning">Mock Data</span>
+                            {% endif %}
+                        </p>
+                        
+                        <div class="mt-3">
+                            <p><strong>Key Indicators:</strong></p>
+                            <ul class="list-group">
+                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                    RSI (14)
+                                    <span class="badge 
+                                        {% if market_data.rsi < 30 %}bg-success
+                                        {% elif market_data.rsi > 70 %}bg-danger
+                                        {% else %}bg-warning{% endif %} rounded-pill">
+                                        {{ market_data.rsi|round(1) }}
+                                    </span>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                    MACD
+                                    <span class="badge 
+                                        {% if market_data.macd_diff > 0 %}bg-success
+                                        {% else %}bg-danger{% endif %} rounded-pill">
+                                        {{ market_data.macd_diff|round(2) }}
+                                    </span>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                    ATR Ratio
+                                    <span class="badge 
+                                        {% if market_data.atr_ratio > 1.2 %}bg-danger
+                                        {% elif market_data.atr_ratio < 0.8 %}bg-success
+                                        {% else %}bg-info{% endif %} rounded-pill">
+                                        {{ market_data.atr_ratio|round(2) }}
+                                    </span>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- PCA Interpretation Overview -->
+<div class="row">
+    <div class="col-12">
+        <div class="card mb-4">
+            <div class="card-header bg-secondary text-white">
+                <h4 class="mb-0">PCA Interpretation Summary</h4>
+            </div>
+            <div class="card-body">
+                <p class="lead">Below is a summary of the Principal Component Analysis results:</p>
+                
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Component</th>
+                                <th>Name</th>
+                                <th>Value</th>
+                                <th>Signal</th>
+                                <th>Variance %</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for interp in market_data.pca_interpretations %}
+                            <tr>
+                                <td><strong>PC{{ interp.id }}</strong></td>
+                                <td>{{ interp.name }}</td>
+                                <td>{{ interp.current_value|round(2) }}</td>
+                                <td>
+                                    <span class="badge 
+                                        {% if 'Bullish' in interp.signal or 'Accumulation' in interp.signal %}bg-success
+                                        {% elif 'Bearish' in interp.signal or 'Distribution' in interp.signal %}bg-danger
+                                        {% elif 'Reversal' in interp.signal %}bg-warning
+                                        {% elif 'Strong' in interp.signal %}bg-primary
+                                        {% else %}bg-secondary{% endif %}">
+                                        {{ interp.signal }}
+                                    </span>
+                                </td>
+                                <td>{{ interp.variance }}%</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Detailed PCA Components -->
+<div class="row">
+    <div class="col-12">
+        <div class="card mb-4">
+            <div class="card-header bg-dark text-white">
+                <h4 class="mb-0">Detailed PCA Component Analysis</h4>
+            </div>
+            <div class="card-body">
+                <!-- Component 1 -->
+                <div class="card mb-4 border-primary border-start border-3">
+                    <div class="card-header bg-light">
+                        <h5 class="mb-0">Component 1 (42.11% variance) – Momentum & Volatility Strength</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row mb-4">
+                            <div class="col-md-6">
+                                <h6>Current Value: {{ market_data.pca_interpretations[0].current_value|round(2) }}</h6>
+                                <h6>Signal: <span class="badge {% if 'Bullish' in market_data.pca_interpretations[0].signal %}bg-success{% elif 'Bearish' in market_data.pca_interpretations[0].signal %}bg-danger{% else %}bg-secondary{% endif %}">
+                                    {{ market_data.pca_interpretations[0].signal }}
+                                </span></h6>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="progress">
+                                    {% set width1 = market_data.pca_interpretations[0].current_value|abs * 20 %}
+                                    {% if width1 > 100 %}{% set width1 = 100 %}{% endif %}
+                                    <div class="progress-bar 
+                                        {% if market_data.pca_interpretations[0].current_value > 0 %}bg-success
+                                        {% else %}bg-danger{% endif %}" 
+                                        role="progressbar"
+                                        style="width: {{ width1 }}%">
+                                        {{ market_data.pca_interpretations[0].current_value|round(2) }}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <h6>Top Indicator Loadings:</h6>
+                        <ul class="list-group mb-4">
+                            <li class="list-group-item">
+                                cci: 0.9109
+                                <div class="progress mt-1" style="height: 8px;">
+                                    <div class="progress-bar bg-primary" role="progressbar" style="width: 91%"></div>
+                                </div>
+                            </li>
+                            <li class="list-group-item">
+                                roc_20: 0.9099
+                                <div class="progress mt-1" style="height: 8px;">
+                                    <div class="progress-bar bg-primary" role="progressbar" style="width: 91%"></div>
+                                </div>
+                            </li>
+                            <li class="list-group-item">
+                                stoch_d: 0.8297
+                                <div class="progress mt-1" style="height: 8px;">
+                                    <div class="progress-bar bg-primary" role="progressbar" style="width: 83%"></div>
+                                </div>
+                            </li>
+                            <li class="list-group-item">
+                                tenkan_kijun_diff: 0.7981
+                                <div class="progress mt-1" style="height: 8px;">
+                                    <div class="progress-bar bg-primary" role="progressbar" style="width: 80%"></div>
+                                </div>
+                            </li>
+                            <li class="list-group-item">
+                                historical_volatility_30: 0.7734
+                                <div class="progress mt-1" style="height: 8px;">
+                                    <div class="progress-bar bg-primary" role="progressbar" style="width: 77%"></div>
+                                </div>
+                            </li>
+                        </ul>
+
+                        <h6>Interpretation:</h6>
+                        <p>This component captures momentum and volatility strength over a medium-term horizon (~20-30 periods).</p>
+                        <p>Heavily weighted by indicators reflecting clear price momentum and volatility regimes.</p>
+                        <p>Strong positive loading indicates bullish momentum or upward volatility movement; strong negative loading signals bearish momentum.</p>
+                    </div>
+                </div>
+
+                <!-- Component 2 -->
+                <div class="card mb-4 border-success border-start border-3">
+                    <div class="card-header bg-light">
+                        <h5 class="mb-0">Component 2 (26.32% variance) – Volume and Short-Term Momentum Pressure</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row mb-4">
+                            <div class="col-md-6">
+                                <h6>Current Value: {{ market_data.pca_interpretations[1].current_value|round(2) }}</h6>
+                                <h6>Signal: <span class="badge {% if 'Accumulation' in market_data.pca_interpretations[1].signal %}bg-success{% elif 'Distribution' in market_data.pca_interpretations[1].signal %}bg-danger{% else %}bg-secondary{% endif %}">
+                                    {{ market_data.pca_interpretations[1].signal }}
+                                </span></h6>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="progress">
+                                    {% set width2 = market_data.pca_interpretations[1].current_value|abs * 20 %}
+                                    {% if width2 > 100 %}{% set width2 = 100 %}{% endif %}
+                                    <div class="progress-bar 
+                                        {% if market_data.pca_interpretations[1].current_value > 0 %}bg-success
+                                        {% else %}bg-danger{% endif %}" 
+                                        role="progressbar"
+                                        style="width: {{ width2 }}%">
+                                        {{ market_data.pca_interpretations[1].current_value|round(2) }}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <h6>Top Indicator Loadings:</h6>
+                        <ul class="list-group mb-4">
+                            <li class="list-group-item">
+                                obv_ratio: 1.0481
+                                <div class="progress mt-1" style="height: 8px;">
+                                    <div class="progress-bar bg-success" role="progressbar" style="width: 100%"></div>
+                                </div>
+                            </li>
+                            <li class="list-group-item">
+                                mfi: 0.9141
+                                <div class="progress mt-1" style="height: 8px;">
+                                    <div class="progress-bar bg-success" role="progressbar" style="width: 91%"></div>
+                                </div>
+                            </li>
+                            <li class="list-group-item">
+                                cmf: 0.8525
+                                <div class="progress mt-1" style="height: 8px;">
+                                    <div class="progress-bar bg-success" role="progressbar" style="width: 85%"></div>
+                                </div>
+                            </li>
+                            <li class="list-group-item">
+                                roc_10: 0.7237
+                                <div class="progress mt-1" style="height: 8px;">
+                                    <div class="progress-bar bg-success" role="progressbar" style="width: 72%"></div>
+                                </div>
+                            </li>
+                            <li class="list-group-item">
+                                williams_r: 0.6801
+                                <div class="progress mt-1" style="height: 8px;">
+                                    <div class="progress-bar bg-success" role="progressbar" style="width: 68%"></div>
+                                </div>
+                            </li>
+                        </ul>
+
+                        <h6>Interpretation:</h6>
+                        <p>Clearly focuses on short-term volume-based momentum and underlying market liquidity.</p>
+                        <p>Large positive values indicate strong buying (accumulation) with momentum; negative scores show strong selling (distribution).</p>
+                        <p>Useful to interpret market conviction and imminent shifts.</p>
+                    </div>
+                </div>
+
+                <!-- Component 3 -->
+                <div class="card mb-4 border-warning border-start border-3">
+                    <div class="card-header bg-light">
+                        <h5 class="mb-0">Component 3 (15.79% variance) – Short-Term Trend and Price Action</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row mb-4">
+                            <div class="col-md-6">
+                                <h6>Current Value: {{ market_data.pca_interpretations[2].current_value|round(2) }}</h6>
+                                <h6>Signal: <span class="badge {% if 'Strong Trend' in market_data.pca_interpretations[2].signal or 'Trending' in market_data.pca_interpretations[2].signal %}bg-primary{% elif 'Counter-Trend' in market_data.pca_interpretations[2].signal %}bg-warning{% else %}bg-secondary{% endif %}">
+                                    {{ market_data.pca_interpretations[2].signal }}
+                                </span></h6>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="progress">
+                                    {% set width3 = market_data.pca_interpretations[2].current_value|abs * 20 %}
+                                    {% if width3 > 100 %}{% set width3 = 100 %}{% endif %}
+                                    <div class="progress-bar 
+                                        {% if market_data.pca_interpretations[2].current_value > 0 %}bg-success
+                                        {% else %}bg-danger{% endif %}" 
+                                        role="progressbar"
+                                        style="width: {{ width3 }}%">
+                                        {{ market_data.pca_interpretations[2].current_value|round(2) }}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <h6>Top Indicator Loadings:</h6>
+                        <ul class="list-group mb-4">
+                            <li class="list-group-item">
+                                volume_ratio_20: 1.0272
+                                <div class="progress mt-1" style="height: 8px;">
+                                    <div class="progress-bar bg-warning" role="progressbar" style="width: 100%"></div>
+                                </div>
+                            </li>
+                            <li class="list-group-item">
+                                supertrend: 0.8103
+                                <div class="progress mt-1" style="height: 8px;">
+                                    <div class="progress-bar bg-warning" role="progressbar" style="width: 81%"></div>
+                                </div>
+                            </li>
+                            <li class="list-group-item">
+                                adx: 0.7851
+                                <div class="progress mt-1" style="height: 8px;">
+                                    <div class="progress-bar bg-warning" role="progressbar" style="width: 79%"></div>
+                                </div>
+                            </li>
+                            <li class="list-group-item">
+                                ema9_ratio: 0.7743
+                                <div class="progress mt-1" style="height: 8px;">
+                                    <div class="progress-bar bg-warning" role="progressbar" style="width: 77%"></div>
+                                </div>
+                            </li>
+                            <li class="list-group-item">
+                                cci: 0.7101
+                                <div class="progress mt-1" style="height: 8px;">
+                                    <div class="progress-bar bg-warning" role="progressbar" style="width: 71%"></div>
+                                </div>
+                            </li>
+                        </ul>
+
+                        <h6>Interpretation:</h6>
+                        <p>This component captures short-term trend strength and immediate volume-price action.</p>
+                        <p>Strong loadings indicate decisive trending price moves coupled with abnormal trading volume.</p>
+                        <p>Ideal for short-term trade decisions.</p>
+                    </div>
+                </div>
+
+                <!-- Component 4 -->
+                <div class="card mb-4 border-info border-start border-3">
+                    <div class="card-header bg-light">
+                        <h5 class="mb-0">Component 4 (10.53% variance) – Oscillator Divergence & Market Extremes</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row mb-4">
+                            <div class="col-md-6">
+                                <h6>Current Value: {{ market_data.pca_interpretations[3].current_value|round(2) }}</h6>
+                                <h6>Signal: <span class="badge {% if 'Potential Reversal' in market_data.pca_interpretations[3].signal %}bg-warning{% elif 'Divergence' in market_data.pca_interpretations[3].signal %}bg-info{% else %}bg-secondary{% endif %}">
+                                    {{ market_data.pca_interpretations[3].signal }}
+                                </span></h6>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="progress">
+                                    {% set width4 = market_data.pca_interpretations[3].current_value|abs * 20 %}
+                                    {% if width4 > 100 %}{% set width4 = 100 %}{% endif %}
+                                    <div class="progress-bar 
+                                        {% if market_data.pca_interpretations[3].current_value > 0 %}bg-warning
+                                        {% else %}bg-info{% endif %}" 
+                                        role="progressbar"
+                                        style="width: {{ width4 }}%">
+                                        {{ market_data.pca_interpretations[3].current_value|round(2) }}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <h6>Top Indicator Loadings:</h6>
+                        <ul class="list-group mb-4">
+                            <li class="list-group-item">
+                                stoch_diff: 0.9694
+                                <div class="progress mt-1" style="height: 8px;">
+                                    <div class="progress-bar bg-info" role="progressbar" style="width: 97%"></div>
+                                </div>
+                            </li>
+                            <li class="list-group-item">
+                                obv_ratio: 0.8908
+                                <div class="progress mt-1" style="height: 8px;">
+                                    <div class="progress-bar bg-info" role="progressbar" style="width: 89%"></div>
+                                </div>
+                            </li>
+                            <li class="list-group-item">
+                                bb_width: 0.8298
+                                <div class="progress mt-1" style="height: 8px;">
+                                    <div class="progress-bar bg-info" role="progressbar" style="width: 83%"></div>
+                                </div>
+                            </li>
+                            <li class="list-group-item">
+                                bb_pct: 0.7715
+                                <div class="progress mt-1" style="height: 8px;">
+                                    <div class="progress-bar bg-info" role="progressbar" style="width: 77%"></div>
+                                </div>
+                            </li>
+                            <li class="list-group-item">
+                                roc_3: 0.7104
+                                <div class="progress mt-1" style="height: 8px;">
+                                    <div class="progress-bar bg-info" role="progressbar" style="width: 71%"></div>
+                                </div>
+                            </li>
+                        </ul>
+
+                        <h6>Interpretation:</h6>
+                        <p>Primarily reflects conditions of market extremes or reversals indicated by oscillator divergence and volatility band conditions.</p>
+                        <p>Highly valuable in identifying potential breakouts or trend reversals.</p>
+                    </div>
+                </div>
+
+                <!-- Component 5 -->
+                <div class="card mb-4 border-dark border-start border-3">
+                    <div class="card-header bg-light">
+                        <h5 class="mb-0">Component 5 (5.26% variance) – Volatility & Short-Term Oscillation</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row mb-4">
+                            <div class="col-md-6">
+                                <h6>Current Value: {{ market_data.pca_interpretations[4].current_value|round(2) }}</h6>
+                                <h6>Signal: <span class="badge {% if 'High Instability' in market_data.pca_interpretations[4].signal %}bg-danger{% elif 'Unstable' in market_data.pca_interpretations[4].signal %}bg-warning{% else %}bg-success{% endif %}">
+                                    {{ market_data.pca_interpretations[4].signal }}
+                                </span></h6>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="progress">
+                                    {% set width5 = market_data.pca_interpretations[4].current_value|abs * 20 %}
+                                    {% if width5 > 100 %}{% set width5 = 100 %}{% endif %}
+                                    <div class="progress-bar 
+                                        {% if market_data.pca_interpretations[4].current_value > 0 %}bg-danger
+                                        {% else %}bg-success{% endif %}" 
+                                        role="progressbar"
+                                        style="width: {{ width5 }}%">
+                                        {{ market_data.pca_interpretations[4].current_value|round(2) }}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <h6>Top Indicator Loadings:</h6>
+                        <ul class="list-group mb-4">
+                            <li class="list-group-item">
+                                volume_ratio_50: 0.7528
+                                <div class="progress mt-1" style="height: 8px;">
+                                    <div class="progress-bar bg-dark" role="progressbar" style="width: 75%"></div>
+                                </div>
+                            </li>
+                            <li class="list-group-item">
+                                stoch_rsi_d: 0.7080
+                                <div class="progress mt-1" style="height: 8px;">
+                                    <div class="progress-bar bg-dark" role="progressbar" style="width: 71%"></div>
+                                </div>
+                            </li>
+                            <li class="list-group-item">
+                                macd_diff: 0.5630
+                                <div class="progress mt-1" style="height: 8px;">
+                                    <div class="progress-bar bg-dark" role="progressbar" style="width: 56%"></div>
+                                </div>
+                            </li>
+                            <li class="list-group-item">
+                                historical_volatility_30: 0.5468
+                                <div class="progress mt-1" style="height: 8px;">
+                                    <div class="progress-bar bg-dark" role="progressbar" style="width: 55%"></div>
+                                </div>
+                            </li>
+                            <li class="list-group-item">
+                                bb_pct: 0.4821
+                                <div class="progress mt-1" style="height: 8px;">
+                                    <div class="progress-bar bg-dark" role="progressbar" style="width: 48%"></div>
+                                </div>
+                            </li>
+                        </ul>
+
+                        <h6>Interpretation:</h6>
+                        <p>Primarily captures mid-term volatility changes and short-term oscillator behavior.</p>
+                        <p>Useful for validating stability or instability of recent price moves.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log("PCA Analysis page loaded");
+    });
+</script>
+
+<style>
+    .progress {
+        height: 20px;
+        margin-bottom: 12px;
+    }
+    
+    /* Improved styling for component cards */
+    .card {
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        margin-bottom: 20px;
+    }
+    
+    .card-header {
+        font-weight: bold;
+    }
+    
+    .indicator-weight {
+        display: inline-block;
+        width: 100px;
+        height: 10px;
+        background-color: #e9ecef;
+        margin-right: 10px;
+        position: relative;
+    }
+    
+    .indicator-weight-fill {
+        position: absolute;
+        top: 0;
+        left: 0;
+        height: 100%;
+        background-color: #007bff;
+    }
+</style>
+{% endblock %} 

@@ -1,24 +1,25 @@
 {% extends "base.html" %}
 
-{% block page_title %}Market Condition Dashboard{% endblock %}
+{% block page_title %}Market Dashboard{% endblock %}
 
 {% block content %}
 <div class="row mb-4">
-    <div class="col-md-8">
-        <div class="row mb-4">
-            <div class="col-md-6">
-                <div class="card h-100">
-                    <div class="card-header bg-primary text-white">
-                        <h5 class="mb-0">Current Market Status</h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between mb-3">
-                            <h6 class="card-subtitle text-muted">Market Regime:</h6>
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">Current Market Data</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h1 class="display-4 mb-3">${{ market_data.formatted_price }}</h1>
+                        <div class="d-flex align-items-center mb-3">
+                            <h5 class="me-3">Market Regime:</h5>
                             <span class="badge bg-info fs-6">{{ market_data.market_regime }}</span>
                         </div>
-                        <div class="d-flex justify-content-between mb-3">
-                            <h6 class="card-subtitle text-muted">Trade Signal:</h6>
-                            <span class="badge 
+                        <div class="d-flex align-items-center">
+                            <h5 class="me-3">Trade Signal:</h5>
+                            <span class="badge fs-6 
                                 {% if market_data.trade_signal == 'Long' %}
                                     bg-success
                                 {% elif market_data.trade_signal == 'Short' %}
@@ -27,292 +28,296 @@
                                     bg-warning
                                 {% else %}
                                     bg-secondary
-                                {% endif %} fs-6">
+                                {% endif %}">
                                 {{ market_data.trade_signal }}
                             </span>
                         </div>
-                        <div class="d-flex flex-wrap gap-2 mt-2">
-                            <button id="compare-results" class="btn btn-outline-secondary btn-sm">Compare With Direct Run</button>
-                            <button id="force-initialize" class="btn btn-outline-warning btn-sm">Force Re-Initialize</button>
-                            <button id="analyze-pc1" class="btn btn-outline-primary btn-sm">Analyze PC1</button>
-                            <button id="analyze-pc2" class="btn btn-outline-success btn-sm">Analyze PC2</button>
-                            <button id="analyze-pc3" class="btn btn-outline-info btn-sm">Analyze PC3</button>
-                        </div>
-                        <div id="comparison-results" class="mt-3 small" style="display: none;">
-                            <div class="alert alert-info">
-                                <p class="mb-1"><strong>Direct Run Results:</strong></p>
-                                <div id="direct-regime" class="mb-1">Market Regime: Loading...</div>
-                                <div id="direct-signal" class="mb-1">Trade Signal: Loading...</div>
-                                <div id="direct-pc-values" class="mb-1">PC Values: Loading...</div>
-                            </div>
-                        </div>
-                        <div id="pc1-analysis-results" class="mt-3 small" style="display: none;">
-                            <div class="alert alert-primary">
-                                <p class="mb-1"><strong>PC1 Analysis (Momentum):</strong></p>
-                                <div id="pc1-value" class="mb-1">PC1 Value: Loading...</div>
-                                <div id="pc1-indicators" class="mb-1">Key Indicators: Loading...</div>
-                                <div id="pc1-features" class="mb-1">Top PC1 Features: Loading...</div>
-                                <p class="mt-2 mb-1"><strong>Insight:</strong></p>
-                                <div id="pc1-insight" class="mb-1">Loading analysis...</div>
-                            </div>
-                        </div>
-                        <div id="pc2-analysis-results" class="mt-3 small" style="display: none;">
-                            <div class="alert alert-success">
-                                <p class="mb-1"><strong>PC2 Analysis (Volatility/RSI):</strong></p>
-                                <div id="pc2-value" class="mb-1">PC2 Value: Loading...</div>
-                                <div id="pc2-indicators" class="mb-1">Key Indicators: Loading...</div>
-                                <div id="pc2-features" class="mb-1">Top PC2 Features: Loading...</div>
-                                <p class="mt-2 mb-1"><strong>Insight:</strong></p>
-                                <div id="pc2-insight" class="mb-1">Loading analysis...</div>
-                            </div>
-                        </div>
-                        <div id="pc3-analysis-results" class="mt-3 small" style="display: none;">
-                            <div class="alert alert-info">
-                                <p class="mb-1"><strong>PC3 Analysis:</strong></p>
-                                <div id="pc3-value" class="mb-1">PC3 Value: Loading...</div>
-                                <div id="pc3-indicators" class="mb-1">Key Indicators: Loading...</div>
-                                <div id="pc3-features" class="mb-1">Top PC3 Features: Loading...</div>
-                                <p class="mt-2 mb-1"><strong>Insight:</strong></p>
-                                <div id="pc3-insight" class="mb-1">Loading analysis...</div>
-                            </div>
-                        </div>
                     </div>
-                </div>
-            </div>
-            <div class="col-md-6">
-                <div class="card h-100">
-                    <div class="card-header bg-primary text-white">
-                        <h5 class="mb-0">Principal Components</h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="chart-container" style="position: relative; height: 200px; width: 100%;">
-                            <canvas id="pcChart"></canvas>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="row">
-            <div class="col-12">
-                <div class="card">
-                    <div class="card-header bg-secondary text-white">
-                        <h5 class="mb-0">Component Details</h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="row">
-                            <div class="col-md-4">
-                                <div class="card border-primary mb-3">
-                                    <div class="card-header">PC1 (Momentum)</div>
-                                    <div class="card-body">
-                                        <h5 class="card-title">{{ "%.2f"|format(market_data.pc1|float) }}</h5>
-                                        <div class="progress">
-                                            <div class="progress-bar 
-                                                {% if market_data.pc1 > 0 %}
-                                                    bg-success
-                                                {% else %}
-                                                    bg-danger
-                                                {% endif %}" 
-                                                role="progressbar" 
-                                                style="width: {{ market_data.pc1|safe_width }}%">
-                                            </div>
-                                        </div>
-                                        <p class="card-text mt-2">
-                                            {% if market_data.pc1 > 0 %}
-                                                Positive momentum indicator
-                                            {% else %}
-                                                Negative momentum indicator
-                                            {% endif %}
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-4">
-                                <div class="card border-success mb-3">
-                                    <div class="card-header">PC2 (Volatility/RSI)</div>
-                                    <div class="card-body">
-                                        <h5 class="card-title">{{ "%.2f"|format(market_data.pc2|float) }}</h5>
-                                        <div class="progress">
-                                            <div class="progress-bar 
-                                                {% if market_data.pc2 > 0 %}
-                                                    bg-success
-                                                {% else %}
-                                                    bg-danger
-                                                {% endif %}" 
-                                                role="progressbar" 
-                                                style="width: {{ market_data.pc2|safe_width }}%">
-                                            </div>
-                                        </div>
-                                        <p class="card-text mt-2">
-                                            {% if market_data.pc2 > 0 %}
-                                                Higher volatility/RSI indicator
-                                            {% else %}
-                                                Lower volatility/RSI indicator
-                                            {% endif %}
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-4">
-                                <div class="card border-info mb-3">
-                                    <div class="card-header">PC3 (Trend Strength)</div>
-                                    <div class="card-body">
-                                        <h5 class="card-title">{{ "%.2f"|format(market_data.pc3|float) }}</h5>
-                                        <div class="progress">
-                                            <div class="progress-bar 
-                                                {% if market_data.pc3 > 0 %}
-                                                    bg-success
-                                                {% else %}
-                                                    bg-danger
-                                                {% endif %}" 
-                                                role="progressbar" 
-                                                style="width: {{ market_data.pc3|safe_width }}%">
-                                            </div>
-                                        </div>
-                                        <p class="card-text mt-2">
-                                            {% if market_data.pc3 > 0 %}
-                                                <span class="text-warning">Strong momentum but overbought</span>
-                                            {% else %}
-                                                <span class="text-info">Weak momentum but oversold</span>
-                                            {% endif %}
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
+                    <div class="col-md-6">
+                        <p class="lead">
+                            Last Updated: {{ market_data.last_updated }} 
+                            {% if market_data.using_real_data %}
+                            <span class="badge bg-success">Real Data</span>
+                            {% else %}
+                            <span class="badge bg-warning">Mock Data</span>
+                            {% endif %}
+                        </p>
+                        
+                        <div class="mt-3">
+                            <p><strong>Key Indicators:</strong></p>
+                            <ul class="list-group">
+                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                    RSI (14)
+                                    <span class="badge 
+                                        {% if market_data.rsi < 30 %}bg-success
+                                        {% elif market_data.rsi > 70 %}bg-danger
+                                        {% else %}bg-warning{% endif %} rounded-pill">
+                                        {{ market_data.rsi|round(1) }}
+                                    </span>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                    MACD
+                                    <span class="badge 
+                                        {% if market_data.macd_diff > 0 %}bg-success
+                                        {% else %}bg-danger{% endif %} rounded-pill">
+                                        {{ market_data.macd_diff|round(2) }}
+                                    </span>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                    ATR Ratio
+                                    <span class="badge 
+                                        {% if market_data.atr_ratio > 1.2 %}bg-danger
+                                        {% elif market_data.atr_ratio < 0.8 %}bg-success
+                                        {% else %}bg-info{% endif %} rounded-pill">
+                                        {{ market_data.atr_ratio|round(2) }}
+                                    </span>
+                                </li>
+                            </ul>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
     </div>
-    
-    <!-- Sidebar with price, indicators, and explanation -->
-    <div class="col-md-4">
-        <!-- Current Price and Indicators Card -->
-        <div class="card mb-4">
-            <div class="card-header bg-dark text-white">
-                <h5 class="mb-0">Market Data</h5>
-            </div>
-            <div class="card-body">
-                <div class="d-flex justify-content-between mb-2">
-                    <span class="text-muted">Symbol:</span>
-                    <strong>ETH/USDT</strong>
-                </div>
-                {% if market_data.price is defined %}
-                <div class="d-flex justify-content-between mb-2">
-                    <span class="text-muted">Current Price:</span>
-                    <strong>${{ "%.2f"|format(market_data.price|float) }}</strong>
-                </div>
-                {% endif %}
-                
-                {% if market_data.rsi is defined %}
-                <div class="d-flex justify-content-between mb-2">
-                    <span class="text-muted">RSI:</span>
-                    <strong>{{ "%.2f"|format(market_data.rsi|float) }}</strong>
-                </div>
-                {% endif %}
-                
-                {% if market_data.adx is defined %}
-                <div class="d-flex justify-content-between mb-2">
-                    <span class="text-muted">ADX:</span>
-                    <strong>{{ "%.2f"|format(market_data.adx|float) }}</strong>
-                </div>
-                {% endif %}
-                
-                {% if market_data.macd_diff is defined %}
-                <div class="d-flex justify-content-between mb-2">
-                    <span class="text-muted">MACD:</span>
-                    <strong>{{ "%.4f"|format(market_data.macd_diff|float) }}</strong>
-                </div>
-                {% endif %}
-                
-                {% if market_data.bb_width is defined %}
-                <div class="d-flex justify-content-between mb-2">
-                    <span class="text-muted">BB Width:</span>
-                    <strong>{{ "%.4f"|format(market_data.bb_width|float) }}</strong>
-                </div>
-                {% endif %}
-            </div>
-        </div>
-        
-        <!-- PCA Components Explanation Card -->
-        <div class="card mb-4">
-            <div class="card-header bg-info text-white">
-                <h5 class="mb-0">PCA Components Explained</h5>
-            </div>
-            <div class="card-body">
-                <p><strong>PC1 (Momentum Strength)</strong> → RSI & MACD → Captures market momentum.</p>
-                <p><strong>PC2 (Trend Strength)</strong> → ADX & MACD → Captures sustained trend movements.</p>
-                <p><strong>PC3 (Divergences & Mean Reversions)</strong> → MACD & RSI negative correlation.</p>
-                
-                <hr>
-                <h6 class="mt-3 mb-2">Understanding PC3 in Detail:</h6>
-                
-                <div class="p-2 mb-2 bg-light rounded">
-                    <p class="mb-1"><strong class="text-warning">Positive PC3</strong> = High MACD, Low RSI → <em>Strong Momentum but Overbought</em></p>
-                    <ul class="small mb-1">
-                        <li>Market is moving up strongly, but RSI suggests it's overbought</li>
-                        <li>Warning of an upcoming correction or pullback</li>
-                        <li>Look for exhaustion signals (RSI above 70, price stalling)</li>
-                    </ul>
-                </div>
-                
-                <div class="p-2 bg-light rounded">
-                    <p class="mb-1"><strong class="text-info">Negative PC3</strong> = Low MACD, High RSI → <em>Weak Momentum but Oversold</em></p>
-                    <ul class="small mb-1">
-                        <li>Market has weak momentum, but RSI is recovering from oversold conditions</li>
-                        <li>Market may be bottoming out or setting up for a reversal</li>
-                        <li>Look for long opportunities when PC1 is turning positive</li>
-                    </ul>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Trading Strategy Card -->
-        <div class="card mb-4">
-            <div class="card-header bg-success text-white">
-                <h5 class="mb-0">Trading Strategy</h5>
-            </div>
-            <div class="card-body">
-                <h6 class="card-subtitle mb-2">📊 Market Regime Clustering</h6>
-                <ul class="small mb-3">
-                    <li>If PC1 is high and PC2 is high → <strong>Strong trending market</strong> (breakout strategy).</li>
-                    <li>If PC1 is high but PC2 is low → <strong>Momentum without a trend</strong> (range breakout).</li>
-                    <li>If PC1 and PC2 are both low → <strong>Choppy/noisy market</strong> (avoid trading).</li>
-                </ul>
-                
-                <h6 class="card-subtitle mb-2">📈 Trading Signals</h6>
-                <ul class="small">
-                    <li><span class="text-success"><strong>Long trades</strong></span> when PC1 crosses above zero & PC2 is rising.</li>
-                    <li><span class="text-danger"><strong>Short trades</strong></span> when PC1 is negative & PC2 is dropping.</li>
-                    <li><span class="text-warning"><strong>Avoid trading</strong></span> when PC3 is high (mean reversion environment).</li>
-                </ul>
-            </div>
-        </div>
-        
-        <!-- PC3 Advanced Trading Strategies Card -->
+</div>
+
+<div class="row">
+    <div class="col-12">
         <div class="card">
-            <div class="card-header bg-primary text-white">
-                <h5 class="mb-0">Advanced PC3 Strategies</h5>
+            <div class="card-header bg-secondary text-white">
+                <h5 class="mb-0">PCA Market Analysis</h5>
             </div>
             <div class="card-body">
-                <h6 class="card-subtitle mb-2">🔍 Filter Out Bad Trades</h6>
-                <ul class="small mb-3">
-                    <li>If PC3 is high → <strong>Avoid chasing momentum trades</strong></li>
-                    <li>If PC3 is low → <strong>Avoid shorting breakdowns</strong></li>
-                </ul>
+                <div class="row mb-4">
+                    <div class="col-12">
+                        <h5 class="mb-3">PCA Component Summary</h5>
+                        <p>Principal Component Analysis of market indicators provides deeper insight into market structure and potential future movements.</p>
+                        
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Component</th>
+                                        <th>Name</th>
+                                        <th>Value</th>
+                                        <th>Signal</th>
+                                        <th>Variance %</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for interp in market_data.pca_interpretations %}
+                                    <tr>
+                                        <td><strong>PC{{ interp.id }}</strong></td>
+                                        <td>{{ interp.name }}</td>
+                                        <td>{{ interp.current_value|round(2) }}</td>
+                                        <td>
+                                            <span class="badge 
+                                                {% if 'Bullish' in interp.signal or 'Accumulation' in interp.signal %}bg-success
+                                                {% elif 'Bearish' in interp.signal or 'Distribution' in interp.signal %}bg-danger
+                                                {% elif 'Reversal' in interp.signal %}bg-warning
+                                                {% elif 'Strong' in interp.signal %}bg-primary
+                                                {% else %}bg-secondary{% endif %}">
+                                                {{ interp.signal }}
+                                            </span>
+                                        </td>
+                                        <td>{{ interp.variance }}%</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <div class="text-end mt-2">
+                            <a href="/pca-analysis" class="btn btn-outline-primary">View Detailed Analysis →</a>
+                        </div>
+                    </div>
+                </div>
                 
-                <h6 class="card-subtitle mb-2">↔️ Divergence-Based Entries</h6>
-                <ul class="small mb-3">
-                    <li>Go <span class="text-success"><strong>Long</strong></span> when PC3 is negative (oversold RSI, weak MACD)</li>
-                    <li>Go <span class="text-danger"><strong>Short</strong></span> when PC3 is positive (overbought RSI, strong MACD)</li>
-                </ul>
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header bg-light">
+                                <h6 class="mb-0">PC1: Momentum & Volatility Strength</h6>
+                            </div>
+                            <div class="card-body">
+                                {% if market_data.pca_interpretations|length > 0 %}
+                                <div class="progress mb-3">
+                                    {% set width1 = market_data.pca_interpretations[0].current_value|abs * 20 %}
+                                    {% if width1 > 100 %}{% set width1 = 100 %}{% endif %}
+                                    <div class="progress-bar 
+                                        {% if market_data.pca_interpretations[0].current_value > 0 %}bg-success
+                                        {% else %}bg-danger{% endif %}" 
+                                        role="progressbar"
+                                        style="width: {{ width1 }}%">
+                                        {{ market_data.pca_interpretations[0].current_value|round(2) }}
+                                    </div>
+                                </div>
+                                <p class="card-text">
+                                    <strong>Signal:</strong> {{ market_data.pca_interpretations[0].signal }}<br>
+                                    <strong>Interpretation:</strong> Captures momentum and volatility strength. 
+                                    {% if market_data.pca_interpretations[0].current_value > 0 %}
+                                    Positive values indicate bullish momentum.
+                                    {% else %}
+                                    Negative values indicate bearish momentum.
+                                    {% endif %}
+                                </p>
+                                {% else %}
+                                <p>PCA data not available</p>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header bg-light">
+                                <h6 class="mb-0">PC2: Volume and Short-Term Momentum</h6>
+                            </div>
+                            <div class="card-body">
+                                {% if market_data.pca_interpretations|length > 1 %}
+                                <div class="progress mb-3">
+                                    {% set width2 = market_data.pca_interpretations[1].current_value|abs * 20 %}
+                                    {% if width2 > 100 %}{% set width2 = 100 %}{% endif %}
+                                    <div class="progress-bar 
+                                        {% if market_data.pca_interpretations[1].current_value > 0 %}bg-success
+                                        {% else %}bg-danger{% endif %}" 
+                                        role="progressbar"
+                                        style="width: {{ width2 }}%">
+                                        {{ market_data.pca_interpretations[1].current_value|round(2) }}
+                                    </div>
+                                </div>
+                                <p class="card-text">
+                                    <strong>Signal:</strong> {{ market_data.pca_interpretations[1].signal }}<br>
+                                    <strong>Interpretation:</strong> Reflects volume-based momentum. 
+                                    {% if market_data.pca_interpretations[1].current_value > 0 %}
+                                    Positive values indicate accumulation/buying.
+                                    {% else %}
+                                    Negative values indicate distribution/selling.
+                                    {% endif %}
+                                </p>
+                                {% else %}
+                                <p>PCA data not available</p>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
                 
-                <h6 class="card-subtitle mb-2">🔄 Combined PCA Analysis</h6>
-                <ul class="small">
-                    <li>If PC1 is rising, PC2 is strong, but PC3 is positive → <strong>Momentum may be topping out</strong> (reduce position size)</li>
-                    <li>If PC1 is weak, PC2 is flat, but PC3 is negative → <strong>Momentum may be bottoming out</strong> (look for reversals)</li>
-                </ul>
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <div class="alert alert-info">
+                            <h6 class="alert-heading">Current Market Summary</h6>
+                            <p>{{ market_data.market_regime }}: {% if market_data.pca_interpretations|length > 0 %}{{ market_data.pca_interpretations[0].current_value|round(2) }}{% endif %}</p>
+                            <hr>
+                            <p class="mb-0">
+                                {% if market_data.trade_signal == 'Long' %}
+                                <strong class="text-success">BULLISH:</strong> Market shows strong positive momentum with confirming volume.
+                                {% elif market_data.trade_signal == 'Short' %}
+                                <strong class="text-danger">BEARISH:</strong> Market displays negative momentum with confirming distribution signals.
+                                {% elif 'Watch' in market_data.trade_signal %}
+                                <strong class="text-warning">CAUTION:</strong> Potential trend change detected - monitor closely for confirmation.
+                                {% else %}
+                                <strong class="text-secondary">NEUTRAL:</strong> Market lacks directional momentum - range-bound conditions likely.
+                                {% endif %}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-secondary text-white">
+                <h5 class="mb-0">Key Technical Indicators</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <!-- RSI -->
+                    <div class="col-md-4 mb-3">
+                        <h6>RSI (14)</h6>
+                        <div class="progress">
+                            <div class="progress-bar 
+                                {% if market_data.rsi < 30 %}
+                                    bg-success
+                                {% elif market_data.rsi > 70 %}
+                                    bg-danger
+                                {% else %}
+                                    bg-warning
+                                {% endif %}"
+                                role="progressbar" 
+                                style="width: {{ market_data.rsi }}%">
+                                {{ market_data.rsi|int }}
+                            </div>
+                        </div>
+                        <small class="text-muted">
+                            {% if market_data.rsi < 30 %}
+                            Oversold condition - potential buying opportunity
+                            {% elif market_data.rsi > 70 %}
+                            Overbought condition - potential selling pressure ahead
+                            {% else %}
+                            Neutral momentum zone
+                            {% endif %}
+                        </small>
+                    </div>
+                    
+                    <!-- MACD -->
+                    <div class="col-md-4 mb-3">
+                        <h6>MACD</h6>
+                        <div class="progress">
+                            {% set macd_width = market_data.macd_diff|abs * 50 %}
+                            {% if macd_width > 100 %}{% set macd_width = 100 %}{% endif %}
+                            <div class="progress-bar 
+                                {% if market_data.macd_diff > 0 %}
+                                    bg-success
+                                {% else %}
+                                    bg-danger
+                                {% endif %}" 
+                                role="progressbar" 
+                                style="width: {{ macd_width }}%">
+                                {{ market_data.macd_diff|round(2) }}
+                            </div>
+                        </div>
+                        <small class="text-muted">
+                            {% if market_data.macd_diff > 0 %}
+                            Bullish momentum - uptrend likely continuing
+                            {% else %}
+                            Bearish momentum - downtrend or consolidation
+                            {% endif %}
+                        </small>
+                    </div>
+                    
+                    <!-- ATR Ratio -->
+                    <div class="col-md-4 mb-3">
+                        <h6>ATR Ratio</h6>
+                        <div class="progress">
+                            {% set atr_width = market_data.atr_ratio * 50 %}
+                            {% if atr_width > 100 %}{% set atr_width = 100 %}{% endif %}
+                            <div class="progress-bar 
+                                {% if market_data.atr_ratio > 1 %}
+                                    bg-danger
+                                {% else %}
+                                    bg-success
+                                {% endif %}" 
+                                role="progressbar" 
+                                style="width: {{ atr_width }}%">
+                                {{ market_data.atr_ratio|round(2) }}
+                            </div>
+                        </div>
+                        <small class="text-muted">
+                            {% if market_data.atr_ratio > 1.2 %}
+                            High volatility - increased risk, potential trend changes
+                            {% elif market_data.atr_ratio < 0.8 %}
+                            Low volatility - reduced risk, potential breakout setup
+                            {% else %}
+                            Normal volatility levels
+                            {% endif %}
+                        </small>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -320,483 +325,24 @@
 {% endblock %}
 
 {% block scripts %}
-<!-- Make sure Chart.js is loaded before our script -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.0/dist/chart.min.js"></script>
-
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    console.log("DOM loaded, initializing chart and buttons");
-    
-    // Check if pcChart exists before trying to render it
-    const chartCanvas = document.getElementById('pcChart');
-    if (chartCanvas) {
-        console.log("Found chart canvas, creating chart");
-        const ctx = chartCanvas.getContext('2d');
-        
-        // Convert string values to numbers to ensure proper rendering
-        const pc1Value = parseFloat('{{ market_data.pc1|float }}') || 0;
-        const pc2Value = parseFloat('{{ market_data.pc2|float }}') || 0;
-        const pc3Value = parseFloat('{{ market_data.pc3|float }}') || 0;
-        
-        console.log("PC Values:", pc1Value, pc2Value, pc3Value);
-        
-        // Set chart colors based on values
-        const pc1Color = pc1Value >= 0 ? 'rgba(54, 162, 235, 0.7)' : 'rgba(255, 99, 132, 0.7)';
-        const pc2Color = pc2Value >= 0 ? 'rgba(75, 192, 192, 0.7)' : 'rgba(255, 159, 64, 0.7)';
-        const pc3Color = pc3Value >= 0 ? 'rgba(153, 102, 255, 0.7)' : 'rgba(255, 206, 86, 0.7)';
-        
-        const pc1Border = pc1Value >= 0 ? 'rgba(54, 162, 235, 1)' : 'rgba(255, 99, 132, 1)';
-        const pc2Border = pc2Value >= 0 ? 'rgba(75, 192, 192, 1)' : 'rgba(255, 159, 64, 1)';
-        const pc3Border = pc3Value >= 0 ? 'rgba(153, 102, 255, 1)' : 'rgba(255, 206, 86, 1)';
-        
-        try {
-            // Create chart with JS variables instead of template variables
-            const pcChart = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: ['PC1 (Momentum)', 'PC2 (Volatility/RSI)', 'PC3 (Trend)'],
-                    datasets: [{
-                        label: 'Principal Component Values',
-                        data: [pc1Value, pc2Value, pc3Value],
-                        backgroundColor: [pc1Color, pc2Color, pc3Color],
-                        borderColor: [pc1Border, pc2Border, pc3Border],
-                        borderWidth: 1
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        y: {
-                            beginAtZero: false
-                        }
-                    }
-                }
-            });
-            console.log("Chart created successfully");
-        } catch (error) {
-            console.error("Error creating chart:", error);
-        }
-    } else {
-        console.error("Could not find pcChart canvas element");
-    }
-    
-    // Add functionality to the compare button
-    const compareButton = document.getElementById('compare-results');
-    const comparisonResults = document.getElementById('comparison-results');
-    const directRegime = document.getElementById('direct-regime');
-    const directSignal = document.getElementById('direct-signal');
-    const directPcValues = document.getElementById('direct-pc-values');
-    
-    if (compareButton) {
-        console.log("Found compare button, attaching event listener");
-        compareButton.addEventListener('click', function() {
-            console.log("Compare button clicked");
-            // Show loading state
-            comparisonResults.style.display = 'block';
-            directRegime.textContent = 'Market Regime: Loading...';
-            directSignal.textContent = 'Trade Signal: Loading...';
-            directPcValues.textContent = 'PC Values: Loading...';
-            
-            // Disable button during fetch
-            compareButton.disabled = true;
-            compareButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Comparing...';
-            
-            // Fetch direct results
-            fetch('/run-directly')
-                .then(response => response.json())
-                .then(data => {
-                    console.log("Received direct run data:", data);
-                    // Update the comparison display
-                    directRegime.textContent = `Market Regime: ${data.market_regime}`;
-                    directSignal.textContent = `Trade Signal: ${data.trade_signal}`;
-                    directPcValues.textContent = `PC Values: PC1=${data.pc1.toFixed(2)}, PC2=${data.pc2.toFixed(2)}, PC3=${data.pc3.toFixed(2)}`;
-                    
-                    // Add means
-                    directPcValues.textContent += ` (Means: PC1=${data.pc1_mean.toFixed(2)}, PC2=${data.pc2_mean.toFixed(2)})`;
-                    
-                    // Add a class to highlight differences
-                    if (data.market_regime !== '{{ market_data.market_regime }}') {
-                        directRegime.classList.add('text-danger', 'fw-bold');
-                    }
-                    if (data.trade_signal !== '{{ market_data.trade_signal }}') {
-                        directSignal.classList.add('text-danger', 'fw-bold');
-                    }
-                    
-                    // Re-enable button
-                    compareButton.disabled = false;
-                    compareButton.textContent = 'Compare With Direct Run';
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    directRegime.textContent = 'Error fetching direct results';
-                    directSignal.textContent = '';
-                    directPcValues.textContent = '';
-                    
-                    // Re-enable button
-                    compareButton.disabled = false;
-                    compareButton.textContent = 'Compare With Direct Run';
-                });
-        });
-    } else {
-        console.error("Could not find compare-results button");
-    }
-    
-    // Add functionality to the force initialize button
-    const forceInitButton = document.getElementById('force-initialize');
-    if (forceInitButton) {
-        console.log("Found force initialize button, attaching event listener");
-        forceInitButton.addEventListener('click', function() {
-            console.log("Force initialize button clicked");
-            // Disable button during fetch
-            forceInitButton.disabled = true;
-            forceInitButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Reinitializing...';
-            
-            // Call the force initialize endpoint
-            fetch('/force-initialize')
-                .then(response => response.json())
-                .then(data => {
-                    console.log("Received force initialize response:", data);
-                    if (data.status === 'success') {
-                        // Show a success message
-                        alert(`Successfully reinitialized! PC Means: PC1=${data.pc1_mean.toFixed(2)}, PC2=${data.pc2_mean.toFixed(2)}, PC3=${data.pc3_mean.toFixed(2)}`);
-                        // Reload the page to reflect changes
-                        window.location.reload();
-                    } else {
-                        alert('Failed to reinitialize: ' + data.message);
-                    }
-                    
-                    // Re-enable button
-                    forceInitButton.disabled = false;
-                    forceInitButton.textContent = 'Force Re-Initialize';
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    alert('Error reinitializing: ' + error);
-                    
-                    // Re-enable button
-                    forceInitButton.disabled = false;
-                    forceInitButton.textContent = 'Force Re-Initialize';
-                });
-        });
-    } else {
-        console.error("Could not find force-initialize button");
-    }
-    
-    // Add functionality to the analyze PC1 button
-    const analyzePC1Button = document.getElementById('analyze-pc1');
-    const pc1AnalysisResults = document.getElementById('pc1-analysis-results');
-    const pc1Value = document.getElementById('pc1-value');
-    const pc1Indicators = document.getElementById('pc1-indicators');
-    const pc1Features = document.getElementById('pc1-features');
-    const pc1Insight = document.getElementById('pc1-insight');
-    
-    if (analyzePC1Button) {
-        console.log("Found analyze PC1 button, attaching event listener");
-        analyzePC1Button.addEventListener('click', function() {
-            console.log("Analyze PC1 button clicked");
-            // Show loading state
-            pc1AnalysisResults.style.display = 'block';
-            pc1Value.textContent = 'PC1 Value: Loading...';
-            pc1Indicators.textContent = 'Key Indicators: Loading...';
-            pc1Features.textContent = 'Top PC1 Features: Loading...';
-            pc1Insight.textContent = 'Loading analysis...';
-            
-            // Hide other analysis results
-            document.getElementById('pc2-analysis-results').style.display = 'none';
-            document.getElementById('pc3-analysis-results').style.display = 'none';
-            
-            // Disable button during fetch
-            analyzePC1Button.disabled = true;
-            analyzePC1Button.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Analyzing...';
-            
-            // Fetch PC1 analysis
-            fetch('/analyze-pc1')
-                .then(response => response.json())
-                .then(data => {
-                    console.log("Received PC1 analysis data:", data);
-                    if (data.status && data.status === 'error') {
-                        pc1Value.textContent = 'Error: ' + data.message;
-                        return;
-                    }
-                    
-                    // Update the PC1 analysis display
-                    pc1Value.textContent = `PC1 Value: ${data.pc1_value.toFixed(4)}`;
-                    
-                    // Show key indicators
-                    let indicatorsText = '';
-                    if (data.rsi !== null) indicatorsText += `RSI: ${data.rsi.toFixed(2)} `;
-                    if (data.macd !== null) indicatorsText += `MACD: ${data.macd.toFixed(4)} `;
-                    if (data.adx !== null) indicatorsText += `ADX: ${data.adx.toFixed(2)}`;
-                    pc1Indicators.textContent = `Key Indicators: ${indicatorsText}`;
-                    
-                    // Show top PC1 features
-                    if (data.top_pc1_features && data.top_pc1_features.length > 0) {
-                        let featuresHtml = 'Top PC1 Features:<ul class="mb-0">';
-                        data.top_pc1_features.forEach(feature => {
-                            const featureValue = feature.value !== null ? feature.value.toFixed(4) : 'N/A';
-                            featuresHtml += `<li>${feature.feature}: ${feature.loading.toFixed(4)} (Value: ${featureValue})</li>`;
-                        });
-                        featuresHtml += '</ul>';
-                        pc1Features.innerHTML = featuresHtml;
-                    } else {
-                        pc1Features.textContent = 'Top PC1 Features: Not available';
-                    }
-                    
-                    // Generate insight based on PC1 value and features
-                    let insightText = '';
-                    if (data.pc1_value > 0) {
-                        insightText += 'PC1 is positive, indicating strong market momentum. This typically suggests a trending market with potentially good directional trading opportunities. ';
-                        if (data.macd !== null && data.macd > 0) {
-                            insightText += `MACD is positive (${data.macd.toFixed(4)}), confirming the bullish momentum signal. `;
-                        }
-                    } else {
-                        insightText += 'PC1 is negative, indicating weak or negative market momentum. This typically suggests a corrective or bearish phase. ';
-                        if (data.macd !== null && data.macd < 0) {
-                            insightText += `MACD is negative (${data.macd.toFixed(4)}), confirming the bearish momentum signal. `;
-                        }
-                    }
-                    
-                    // Add recommendation based on top features
-                    if (data.top_pc1_features && data.top_pc1_features.length > 0) {
-                        const topFeature = data.top_pc1_features[0];
-                        insightText += `The most influential feature for PC1 is ${topFeature.feature} with a loading of ${topFeature.loading.toFixed(4)}. `;
-                    }
-                    
-                    pc1Insight.textContent = insightText;
-                    
-                    // Re-enable button
-                    analyzePC1Button.disabled = false;
-                    analyzePC1Button.textContent = 'Analyze PC1';
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    pc1Value.textContent = 'Error analyzing PC1';
-                    pc1Indicators.textContent = '';
-                    pc1Features.textContent = '';
-                    pc1Insight.textContent = 'An error occurred during analysis.';
-                    
-                    // Re-enable button
-                    analyzePC1Button.disabled = false;
-                    analyzePC1Button.textContent = 'Analyze PC1';
-                });
-        });
-    } else {
-        console.error("Could not find analyze-pc1 button");
-    }
-    
-    // Add functionality to the analyze PC2 button
-    const analyzePC2Button = document.getElementById('analyze-pc2');
-    const pc2AnalysisResults = document.getElementById('pc2-analysis-results');
-    const pc2Value = document.getElementById('pc2-value');
-    const pc2Indicators = document.getElementById('pc2-indicators');
-    const pc2Features = document.getElementById('pc2-features');
-    const pc2Insight = document.getElementById('pc2-insight');
-    
-    if (analyzePC2Button) {
-        console.log("Found analyze PC2 button, attaching event listener");
-        analyzePC2Button.addEventListener('click', function() {
-            console.log("Analyze PC2 button clicked");
-            // Show loading state
-            pc2AnalysisResults.style.display = 'block';
-            pc2Value.textContent = 'PC2 Value: Loading...';
-            pc2Indicators.textContent = 'Key Indicators: Loading...';
-            pc2Features.textContent = 'Top PC2 Features: Loading...';
-            pc2Insight.textContent = 'Loading analysis...';
-            
-            // Hide other analysis results
-            document.getElementById('pc1-analysis-results').style.display = 'none';
-            document.getElementById('pc3-analysis-results').style.display = 'none';
-            
-            // Disable button during fetch
-            analyzePC2Button.disabled = true;
-            analyzePC2Button.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Analyzing...';
-            
-            // Fetch PC2 analysis
-            fetch('/analyze-pc2')
-                .then(response => response.json())
-                .then(data => {
-                    console.log("Received PC2 analysis data:", data);
-                    if (data.status && data.status === 'error') {
-                        pc2Value.textContent = 'Error: ' + data.message;
-                        return;
-                    }
-                    
-                    // Update the PC2 analysis display
-                    pc2Value.textContent = `PC2 Value: ${data.pc2_value.toFixed(4)}`;
-                    
-                    // Show key indicators
-                    let indicatorsText = '';
-                    if (data.rsi !== null) indicatorsText += `RSI: ${data.rsi.toFixed(2)} `;
-                    if (data.adx !== null) indicatorsText += `ADX: ${data.adx.toFixed(2)} `;
-                    if (data.bb_width !== null) indicatorsText += `BB Width: ${data.bb_width.toFixed(4)}`;
-                    pc2Indicators.textContent = `Key Indicators: ${indicatorsText}`;
-                    
-                    // Show top PC2 features
-                    if (data.top_pc2_features && data.top_pc2_features.length > 0) {
-                        let featuresHtml = 'Top PC2 Features:<ul class="mb-0">';
-                        data.top_pc2_features.forEach(feature => {
-                            const featureValue = feature.value !== null ? feature.value.toFixed(4) : 'N/A';
-                            featuresHtml += `<li>${feature.feature}: ${feature.loading.toFixed(4)} (Value: ${featureValue})</li>`;
-                        });
-                        featuresHtml += '</ul>';
-                        pc2Features.innerHTML = featuresHtml;
-                    } else {
-                        pc2Features.textContent = 'Top PC2 Features: Not available';
-                    }
-                    
-                    // Generate insight based on PC2 value and features
-                    let insightText = '';
-                    if (data.pc2_value > 0) {
-                        insightText += 'PC2 is positive, indicating higher volatility and potentially stronger trending conditions. ';
-                        if (data.adx !== null) {
-                            if (data.adx > 25) {
-                                insightText += `ADX is strong (${data.adx.toFixed(2)}), confirming a trending market. `;
-                            } else {
-                                insightText += `ADX is moderate (${data.adx.toFixed(2)}), suggesting the trend may not be fully established yet. `;
-                            }
-                        }
-                        if (data.rsi !== null && data.rsi > 60) {
-                            insightText += `RSI is elevated (${data.rsi.toFixed(2)}), suggesting bullish momentum is relatively strong. `;
-                        }
-                    } else {
-                        insightText += 'PC2 is negative, indicating lower volatility and potentially consolidating or choppy conditions. ';
-                        if (data.adx !== null && data.adx < 20) {
-                            insightText += `ADX is low (${data.adx.toFixed(2)}), confirming a non-trending market. `;
-                        }
-                        if (data.bb_width !== null) {
-                            insightText += `Bollinger Band width is ${data.bb_width.toFixed(4)}, which helps gauge the market volatility. `;
-                        }
-                    }
-                    
-                    // Add recommendation based on top features
-                    if (data.top_pc2_features && data.top_pc2_features.length > 0) {
-                        const topFeature = data.top_pc2_features[0];
-                        insightText += `The most influential feature for PC2 is ${topFeature.feature} with a loading of ${topFeature.loading.toFixed(4)}. `;
-                    }
-                    
-                    pc2Insight.textContent = insightText;
-                    
-                    // Re-enable button
-                    analyzePC2Button.disabled = false;
-                    analyzePC2Button.textContent = 'Analyze PC2';
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    pc2Value.textContent = 'Error analyzing PC2';
-                    pc2Indicators.textContent = '';
-                    pc2Features.textContent = '';
-                    pc2Insight.textContent = 'An error occurred during analysis.';
-                    
-                    // Re-enable button
-                    analyzePC2Button.disabled = false;
-                    analyzePC2Button.textContent = 'Analyze PC2';
-                });
-        });
-    } else {
-        console.error("Could not find analyze-pc2 button");
-    }
-    
-    // Add functionality to the analyze PC3 button
-    const analyzePC3Button = document.getElementById('analyze-pc3');
-    const pc3AnalysisResults = document.getElementById('pc3-analysis-results');
-    const pc3Value = document.getElementById('pc3-value');
-    const pc3Indicators = document.getElementById('pc3-indicators');
-    const pc3Features = document.getElementById('pc3-features');
-    const pc3Insight = document.getElementById('pc3-insight');
-    
-    if (analyzePC3Button) {
-        console.log("Found analyze PC3 button, attaching event listener");
-        analyzePC3Button.addEventListener('click', function() {
-            console.log("Analyze PC3 button clicked");
-            // Show loading state
-            pc3AnalysisResults.style.display = 'block';
-            pc3Value.textContent = 'PC3 Value: Loading...';
-            pc3Indicators.textContent = 'Key Indicators: Loading...';
-            pc3Features.textContent = 'Top PC3 Features: Loading...';
-            pc3Insight.textContent = 'Loading analysis...';
-            
-            // Hide other analysis results
-            document.getElementById('pc1-analysis-results').style.display = 'none';
-            document.getElementById('pc2-analysis-results').style.display = 'none';
-            
-            // Disable button during fetch
-            analyzePC3Button.disabled = true;
-            analyzePC3Button.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Analyzing...';
-            
-            // Fetch PC3 analysis
-            fetch('/analyze-pc3')
-                .then(response => response.json())
-                .then(data => {
-                    console.log("Received PC3 analysis data:", data);
-                    if (data.status && data.status === 'error') {
-                        pc3Value.textContent = 'Error: ' + data.message;
-                        return;
-                    }
-                    
-                    // Update the PC3 analysis display
-                    pc3Value.textContent = `PC3 Value: ${data.pc3_value.toFixed(4)}`;
-                    
-                    // Show key indicators
-                    let indicatorsText = '';
-                    if (data.rsi !== null) indicatorsText += `RSI: ${data.rsi.toFixed(2)} `;
-                    if (data.macd !== null) indicatorsText += `MACD: ${data.macd.toFixed(4)} `;
-                    if (data.adx !== null) indicatorsText += `ADX: ${data.adx.toFixed(2)}`;
-                    pc3Indicators.textContent = `Key Indicators: ${indicatorsText}`;
-                    
-                    // Show top PC3 features
-                    if (data.top_pc3_features && data.top_pc3_features.length > 0) {
-                        let featuresHtml = 'Top PC3 Features:<ul class="mb-0">';
-                        data.top_pc3_features.forEach(feature => {
-                            const featureValue = feature.value !== null ? feature.value.toFixed(4) : 'N/A';
-                            featuresHtml += `<li>${feature.feature}: ${feature.loading.toFixed(4)} (Value: ${featureValue})</li>`;
-                        });
-                        featuresHtml += '</ul>';
-                        pc3Features.innerHTML = featuresHtml;
-                    } else {
-                        pc3Features.textContent = 'Top PC3 Features: Not available';
-                    }
-                    
-                    // Generate insight
-                    let insightText = '';
-                    if (data.pc3_value < 0 && data.rsi > 65) {
-                        insightText += 'Your PC3 is negative while RSI is high (above 65). This suggests that in your model, a negative PC3 might indeed correspond to a high RSI, which aligns with the "Weak momentum but oversold" interpretation. ';
-                    } else if (data.pc3_value > 0 && data.rsi < 35) {
-                        insightText += 'Your PC3 is positive while RSI is low (below 35). This suggests that in your model, a positive PC3 might indeed correspond to a low RSI, which aligns with the "Strong momentum but overbought" interpretation. ';
-                    } else {
-                        insightText += `Your current market state (PC3=${data.pc3_value.toFixed(2)}, RSI=${data.rsi?.toFixed(2) || 'N/A'}) suggests that PC3 and RSI have a complex relationship. `;
-                    }
-                    
-                    if (data.macd !== null) {
-                        if ((data.pc3_value < 0 && data.macd < 0) || (data.pc3_value > 0 && data.macd > 0)) {
-                            insightText += `MACD (${data.macd.toFixed(4)}) and PC3 have the same sign, which doesn't match our expected inverse relationship. This suggests the PCA model may have a different interpretation of PC3 than described in the dashboard. `;
-                        } else {
-                            insightText += `MACD (${data.macd.toFixed(4)}) and PC3 have opposite signs, which matches our expected inverse relationship. `;
-                        }
-                    }
-                    
-                    insightText += 'Check the feature loadings for more insight into what PC3 actually represents in your model.';
-                    pc3Insight.textContent = insightText;
-                    
-                    // Re-enable button
-                    analyzePC3Button.disabled = false;
-                    analyzePC3Button.textContent = 'Analyze PC3';
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    pc3Value.textContent = 'Error analyzing PC3';
-                    pc3Indicators.textContent = '';
-                    pc3Features.textContent = '';
-                    pc3Insight.textContent = 'An error occurred during analysis.';
-                    
-                    // Re-enable button
-                    analyzePC3Button.disabled = false;
-                    analyzePC3Button.textContent = 'Analyze PC3';
-                });
-        });
-    } else {
-        console.error("Could not find analyze-pc3 button");
-    }
+    console.log("Dashboard loaded, initializing page");
 });
 </script>
+
+<style>
+    .progress {
+        height: 20px;
+        margin-bottom: 12px;
+    }
+    /* For mobile devices */
+    @media (max-width: 768px) {
+        .col-md-4, .col-md-6 {
+            flex: 0 0 100%;
+            max-width: 100%;
+            margin-bottom: 15px;
+        }
+    }
+</style>
 {% endblock %} 

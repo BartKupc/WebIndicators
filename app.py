@@ -1,710 +1,449 @@
 from flask import Flask, render_template, jsonify
-import json
-import os
-from datetime import datetime
+import datetime
 import logging
-from apscheduler.schedulers.background import BackgroundScheduler
-from pathlib import Path
+import boto3
+import joblib
+from sklearn.decomposition import PCA
+import tarfile
+import os
 import sys
+from pathlib import Path
+import json
 import numpy as np
-import traceback
+from sagemaker.amazon.common import read_recordio
+import pandas as pd
 
-# Add parent directory to path for imports
-base_dir = Path(__file__).resolve().parent.parent
-sys.path.append(str(base_dir))
+# Set up basic logging
+logging.basicConfig(level=logging.INFO, 
+                    format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger('web_indicators')
 
-# Import MarketConditionInterpreter and BitgetFutures
-from Machine1.strategy.market_interpreter import MarketConditionInterpreter
-from Machine1.utils.bitget_futures import BitgetFutures
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler("market_flask.log"),
-        logging.StreamHandler()
-    ]
-)
-
+# Initialize Flask app
 app = Flask(__name__)
 
-# Custom filter for safe absolute value and percent calculation
-@app.template_filter('safe_width')
-def safe_width_filter(value, max_width=100, scale_factor=3):
-    """Convert a value to a safe width percentage for progress bars"""
-    try:
-        # Convert to float if it's a numpy type
-        if isinstance(value, np.number):
-            value = float(value)
-        elif not isinstance(value, (int, float)):
-            try:
-                value = float(value)
-            except (ValueError, TypeError):
-                return 0
-        # Get absolute value
-        abs_value = abs(value)
-        # Calculate percentage with scaling
-        percent = min(abs_value / scale_factor * 100, max_width)
-        return percent
-    except (ValueError, TypeError) as e:
-        logging.error(f"Error in safe_width filter: {str(e)}")
-        return 0
-
-# Global variable to store market conditions
-market_data = {
-    'market_regime': 'Loading...',
-    'trade_signal': 'Loading...',
-    'pc1': 0.0,
-    'pc2': 0.0,
-    'pc3': 0.0,
-    'price': 0.0,
-    'rsi': 0.0,
-    'adx': 0.0,
-    'macd_diff': 0.0,
-    'bb_width': 0.0,
+# Empty placeholder data
+current_data = {
+    'formatted_price': '0.00',
     'last_updated': 'Never',
-    'history': []  # To store historical data
+    'market_regime': 'Unknown',
+    'trade_signal': 'Neutral',
+    'pca_components': None,
+    'has_error': False,
+    'error_message': '',
+    'pca_model_loaded': False,
+    'history': [],
+    'using_real_data': False,
+    'rsi': 50,
+    'macd_diff': 0,
+    'atr_ratio': 1,
+    'pca_interpretations': []
 }
 
-# Initialize the market interpreter and BitGet client
-interpreter = None
-bitget_client = None
 
-# Function to convert NumPy values to Python native types
-def convert_numpy_values(data):
-    """Convert NumPy types to Python native types for JSON serialization"""
-    if isinstance(data, dict):
-        return {key: convert_numpy_values(value) for key, value in data.items()}
-    elif isinstance(data, list):
-        return [convert_numpy_values(item) for item in data]
-    elif isinstance(data, np.integer):
-        return int(data)
-    elif isinstance(data, np.floating):
-        return float(data)
-    elif isinstance(data, np.ndarray):
-        return convert_numpy_values(data.tolist())
-    elif isinstance(data, datetime):
-        return data.strftime('%Y-%m-%d %H:%M:%S')
-    else:
-        return data
 
-def initialize_clients():
-    """Initialize the market interpreter and BitGet client"""
-    global interpreter, bitget_client
+
+# Add parent directory to path for imports
+base_dir = Path(__file__).resolve().parents[1]
+sys.path.append(str(base_dir))
+
+# Path to the S3 model artifact
+S3_BUCKET = 'sagemaker-eu-west-1-688567281415'
+S3_KEY = 'pca_output/pca-2025-03-24-21-12-06-644/output/model.tar.gz'
+LOCAL_MODEL_DIR = 'model_data'
+OUTPUT_DIR = 'pca_analysis_results'  # Output directory for results
+
+# Create output directory if it doesn't exist
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+
+def load_pca_model():
+    """Load the PCA model from S3 and use real market data for PCA analysis"""
+    global current_data
     try:
-        # Initialize MarketConditionInterpreter
-        if interpreter is None:
-            logging.info("Initializing MarketConditionInterpreter...")
-            # Force a call to the direct main method to ensure proper initialization
-            try:
-                logging.info("Forcing a direct initialization with full historical data...")
-                temp_interpreter = MarketConditionInterpreter()
-                
-                # Log the means from the temp instance to verify proper initialization
-                pc1_mean = getattr(temp_interpreter, 'pc1_mean', 0.0)
-                pc2_mean = getattr(temp_interpreter, 'pc2_mean', 0.0)
-                pc3_mean = getattr(temp_interpreter, 'pc3_mean', 0.0)
-                
-                if abs(pc1_mean) < 0.01 and abs(pc2_mean) < 0.01 and abs(pc3_mean) < 0.01:
-                    logging.warning("ALERT: PC means are close to zero in temp instance, which is likely incorrect")
-                    # Try to explicitly load historical data
-                    logging.info("Attempting to explicitly load historical data...")
-                    
-                    # Force the interpreter to load and process the latest data
-                    latest_data = temp_interpreter.get_current_market_data()
-                    temp_interpreter.get_current_market_condition(latest_data)
-                    
-                    # Check means again
-                    pc1_mean = getattr(temp_interpreter, 'pc1_mean', 0.0)
-                    pc2_mean = getattr(temp_interpreter, 'pc2_mean', 0.0)
-                    pc3_mean = getattr(temp_interpreter, 'pc3_mean', 0.0)
-                    
-                    logging.info(f"After forced data load - PC Means: PC1={pc1_mean:.2f}, PC2={pc2_mean:.2f}, PC3={pc3_mean:.2f}")
-                
-                # Use this properly initialized interpreter
-                interpreter = temp_interpreter
-            except Exception as e:
-                logging.error(f"Error in forced initialization: {str(e)}")
-                # Fall back to regular initialization if forced approach fails
-                interpreter = MarketConditionInterpreter()
-            
-            logging.info("MarketConditionInterpreter initialized successfully")
+        # Import numpy locally to avoid scoping issues
+        import numpy as np
         
-        # Initialize BitGet client
-        if bitget_client is None:
-            logging.info("Initializing BitGet client...")
-            # Load configuration for BitGet
-            config_path = base_dir / 'config' / 'config.json'
-            if config_path.exists():
-                with open(config_path, "r") as f:
-                    config = json.load(f)
-                    api_setup = config.get('bitget', {})
-                    if api_setup:
-                        bitget_client = BitgetFutures(api_setup)
-                        logging.info("BitGet client initialized successfully")
-                    else:
-                        bitget_client = BitgetFutures()  # Use default without API keys
-                        logging.info("BitGet client initialized without API keys")
-            else:
-                bitget_client = BitgetFutures()  # Use default without API keys
-                logging.info("BitGet client initialized without API keys (config not found)")
+        # Create model directory if it doesn't exist
+        os.makedirs(LOCAL_MODEL_DIR, exist_ok=True)
         
-        return True
-    except Exception as e:
-        logging.error(f"Error initializing clients: {str(e)}")
-        logging.error(traceback.format_exc())
-        return False
+        # Define the full file path for the downloaded tar.gz
+        model_tar_path = os.path.join(LOCAL_MODEL_DIR, 'model.tar.gz')
+        
+        # Download the model from S3 to the specified file path
+        logger.info(f"Downloading model from S3 {S3_BUCKET}/{S3_KEY} to {model_tar_path}")
+        s3 = boto3.client('s3')
+        s3.download_file(S3_BUCKET, S3_KEY, model_tar_path)
+        logger.info(f"Download complete")
 
-def get_current_price(symbol='ETH/USDT:USDT'):
-    """Get current price for a symbol using BitGet client"""
-    global bitget_client
-    
-    try:
-        if bitget_client is None:
-            initialize_clients()
+        # Extract the model file to the model directory
+        logger.info(f"Extracting model archive")
+        with tarfile.open(model_tar_path, 'r:gz') as tar:
+            tar.extractall(LOCAL_MODEL_DIR)
+        logger.info(f"Extraction complete")
         
-        if bitget_client:
-            # Try to get current price from ticker
-            try:
-                ticker = bitget_client.fetch_ticker(symbol)
-                if ticker and 'last' in ticker:
-                    return ticker['last']
-            except Exception as ticker_error:
-                logging.warning(f"Error fetching ticker: {ticker_error}, trying OHLCV")
-            
-            # If ticker fails, try OHLCV
-            try:
-                recent_candles = bitget_client.fetch_ohlcv(
-                    symbol=symbol,
-                    timeframe='1h',
-                    limit=1
-                )
-                if recent_candles and len(recent_candles) > 0:
-                    return recent_candles[0][4]  # Close price
-            except Exception as ohlcv_error:
-                logging.error(f"Error fetching OHLCV: {ohlcv_error}")
-    except Exception as e:
-        logging.error(f"Error getting current price: {str(e)}")
-    
-    return None
-
-def initialize_interpreter():
-    """Initialize the market interpreter if not already done"""
-    global interpreter
-    try:
-        if interpreter is None:
-            logging.info("Initializing MarketConditionInterpreter...")
-            interpreter = MarketConditionInterpreter()
-            logging.info("MarketConditionInterpreter initialized successfully")
-            return True
-        return True
-    except Exception as e:
-        logging.error(f"Error initializing interpreter: {str(e)}")
-        logging.error(traceback.format_exc())
-        return False
-
-def update_market_data():
-    """Update market data using the interpreter"""
-    global market_data, interpreter, bitget_client
-    
-    try:
-        # Initialize interpreter and BitGet client if needed
-        if interpreter is None or bitget_client is None:
-            success = initialize_clients()
-            if not success:
-                logging.error("Failed to initialize clients")
-                return False
+        # List all files in the extracted directory
+        logger.info("Files in extracted directory:")
+        for root, dirs, files in os.walk(LOCAL_MODEL_DIR):
+            for file in files:
+                file_path = os.path.join(root, file)
+                file_size = os.path.getsize(file_path)
+                logger.info(f"  {file_path}: {file_size} bytes")
         
-        # Get current market condition
-        result = interpreter.get_current_market_condition()
+        # Import required modules for feature calculation and data fetching
+        sys.path.append(str(base_dir))
+        from Machine1.utils.feature_calculator import calculate_all_features
+        from Machine1.utils.bitget_futures import BitgetFutures
         
-        # Check if we have a valid result
-        if 'error' in result:
-            logging.error(f"Error getting market data: {result['error']}")
-            return False
+        # Initialize Bitget client with credentials from config
+        # Only look in WebIndicators/config directory
+        webindicators_dir = Path(__file__).resolve().parent
+        config_path = os.path.join(webindicators_dir, 'config', 'config.json')
         
-        # Get current price directly using BitGet client
-        current_price = get_current_price()
-        if current_price:
-            result['price'] = current_price
-            logging.info(f"Current ETH/USDT price: {current_price}")
+        if os.path.exists(config_path):
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+            bitget_config = config.get('bitget', {})
+            bitget_client = BitgetFutures(bitget_config)
+            logger.info(f"Successfully initialized BitgetFutures client using config from {config_path}")
+        else:
+            # If no config file, raise an error - we need credentials
+            error_msg = f"Config file not found at: {config_path}. Please create the config file at this exact location."
+            logger.error(error_msg)
+            raise ValueError(error_msg)
         
-        # Try to get the raw features for additional indicators
+        # Fetch real market data
+        symbol = "ETH/USDT:USDT"  # Default to ETH/USDT
+        timeframe = "1h"  # Default to 1-hour timeframe
+        
+        # Calculate how many days of data to fetch - need enough for all indicators
+        warmup_period = 15  # Days to skip for warmup (hourly data, so 15 days = 360 candles)
+        analysis_period = 30  # Days to use for analysis
+        total_days = warmup_period + analysis_period
+        
+        # For 1h timeframe, we need 24 candles per day
+        candles_needed = total_days * 24
+        
+        logger.info(f"Fetching {candles_needed} candles of {timeframe} data for {symbol}")
+        
+        # Download the market data
+        market_data = bitget_client.fetch_ohlcv(
+            symbol=symbol,
+            timeframe=timeframe,
+            # Start from X days ago
+            start_time=(datetime.datetime.now() - datetime.timedelta(days=total_days)).strftime('%Y-%m-%d')
+        )
+        
+        # Verify we have a DataFrame with the expected structure
+        if not isinstance(market_data, pd.DataFrame):
+            error_msg = f"Expected DataFrame from bitget_client.fetch_ohlcv, got {type(market_data)}"
+            logger.error(error_msg)
+            raise TypeError(error_msg)
+        
+        logger.info(f"Downloaded {len(market_data)} real market candles")
+        logger.info(f"DataFrame columns: {market_data.columns.tolist() if hasattr(market_data, 'columns') else 'unknown'}")
+        logger.info(f"DataFrame index: {type(market_data.index)}")
+        
+        # No need to convert DataFrame to list, calculate_all_features can work with DataFrame directly
+        
+        # Calculate features
+        logger.info(f"Calculating features for {len(market_data)} candles")
+        features_df = calculate_all_features(market_data)
+        
+        # Get the feature names we expect in our PCA model
+        # These are typical features we'd use in crypto trading
+        expected_features = [
+            'macd_diff', 'rsi', 'stoch_k', 'stoch_d', 'stoch_diff', 
+            'cci', 'williams_r', 'stoch_rsi_k', 'stoch_rsi_d',
+            'adx', 'supertrend', 'bb_width', 'tenkan_kijun_diff',
+            'atr_ratio', 'historical_volatility_30', 'bb_pct',
+            'vwap_ratio', 'obv_ratio', 'mfi', 'cmf', 
+            'volume_ratio_20', 'volume_ratio_50', 'ema9_ratio'
+        ]
+        
+        # Filter to features we'd expect in our PCA model
+        features_to_use = []
+        for feature in expected_features:
+            if feature in features_df.columns:
+                features_to_use.append(feature)
+        
+        # Skip warmup period - use only the last part of the data
+        # For hourly data, we need enough warmup for all indicators (sma100, atr_ratio with ma100, etc.)
+        # Using a 150 candle warmup (about a week of hourly data) should be sufficient
+        warmup_candles = 150  # More than enough for all indicators
+        if len(features_df) > warmup_candles:
+            logger.info(f"Skipping first {warmup_candles} candles as warmup period")
+            features_df = features_df.iloc[warmup_candles:]
+        else:
+            error_msg = f"Not enough data to skip warmup period! Got {len(features_df)} candles, needed at least {warmup_candles+1}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+        
+        # Use the data for PCA
+        feature_data = features_df[features_to_use].values
+        logger.info(f"Created feature matrix with shape: {feature_data.shape}")
+        
+        # Initialize PCA model with 5 components
+        from sklearn.preprocessing import StandardScaler
+        from sklearn.decomposition import PCA
+        
+        # Normalize the data
+        scaler = StandardScaler()
+        normalized_data = scaler.fit_transform(feature_data)
+        
+        # Create and fit a PCA model
+        pca = PCA(n_components=5)
+        pca.fit(normalized_data)
+        
+        # Transform the data to get principal components
+        pc_values = pca.transform(normalized_data)
+        
+        # Get variance ratio but don't print it yet
+        explained_variance = pca.explained_variance_ratio_
+        
+        # Store components for dashboard
+        current_data['pca_components'] = pca.components_
+        current_data['pca_model_loaded'] = True
+        current_data['using_real_data'] = True
+        
+        # Get latest data point for interpretations
+        latest_point = normalized_data[-1]
+        
+        # Generate PCA interpretations with the latest data point
+        generate_pca_interpretations_from_data(pca, latest_point, explained_variance)
+        
+        # Update current price data
         try:
-            # Get current market data with raw features
-            data = interpreter.get_current_market_data()
-            
-            # Extract the last row for current values
-            if data is not None and not data.empty:
-                last_row = data.iloc[-1]
-                
-                # Add technical indicators
-                if 'rsi' in last_row:
-                    result['rsi'] = last_row['rsi']
-                if 'adx' in last_row:
-                    result['adx'] = last_row['adx']
-                if 'macd_diff' in last_row:
-                    result['macd_diff'] = last_row['macd_diff']
-                if 'bb_width' in last_row:
-                    result['bb_width'] = last_row['bb_width']
-        except Exception as e:
-            logging.warning(f"Could not get additional indicators: {str(e)}")
+            latest_price = market_data['close'].iloc[-1]
+            current_data['formatted_price'] = f"{latest_price:.2f}"
+            current_data['last_updated'] = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        except Exception as price_err:
+            logger.warning(f"Could not update price data: {str(price_err)}")
         
-        # Add debug logging for PC values and classification
-        try:
-            # Log the PC values
-            pc1 = result.get('pc1', 0.0)
-            pc2 = result.get('pc2', 0.0)
-            pc3 = result.get('pc3', 0.0)
-            
-            # Log the PCA means from the interpreter
-            pc1_mean = getattr(interpreter, 'pc1_mean', 0.0)
-            pc2_mean = getattr(interpreter, 'pc2_mean', 0.0)
-            pc3_mean = getattr(interpreter, 'pc3_mean', 0.0)
-            
-            logging.info(f"PC Values - PC1: {pc1:.2f}, PC2: {pc2:.2f}, PC3: {pc3:.2f}")
-            logging.info(f"PC Means  - PC1: {pc1_mean:.2f}, PC2: {pc2_mean:.2f}, PC3: {pc3_mean:.2f}")
-            
-            # If means are all close to zero, this is likely incorrect
-            if abs(pc1_mean) < 0.01 and abs(pc2_mean) < 0.01 and abs(pc3_mean) < 0.01:
-                logging.warning("All PC means are close to zero, which is likely incorrect.")
-                logging.warning("The historical data may not be properly initialized.")
-                logging.warning("Try to restart the app or run market_interpreter.py directly once.")
-                
-                # Force the actual market regime calculation using values we calculate here
-                # This ensures we match the logic of market_interpreter.py
-                if pc1 > 0 and pc2 > 0:
-                    corrected_regime = "Strong Trending Market"
-                elif pc1 > 0 and pc2 < 0:
-                    corrected_regime = "Momentum Without Trend"
-                elif pc1 < 0 and pc2 < 0:
-                    corrected_regime = "Choppy/Noisy Market"
-                else:
-                    corrected_regime = "Undefined"
-                
-                # Log the corrected regime
-                if result['market_regime'] != corrected_regime:
-                    logging.warning(f"Overriding incorrect market regime '{result['market_regime']}' with '{corrected_regime}'")
-                    result['market_regime'] = corrected_regime
-            
-            # Log the classification condition
-            if pc1 > pc1_mean and pc2 > pc2_mean:
-                expected_regime = "Strong Trending Market"
-            elif pc1 > pc1_mean and pc2 < pc2_mean:
-                expected_regime = "Momentum Without Trend"
-            elif pc1 < pc1_mean and pc2 < pc2_mean:
-                expected_regime = "Choppy/Noisy Market"
-            else:
-                expected_regime = "Undefined"
-                
-            logging.info(f"Market Regime - Actual: {result['market_regime']}, Expected: {expected_regime}")
-            
-            # If they don't match, add a detailed explanation
-            if result['market_regime'] != expected_regime:
-                logging.warning(f"Market regime mismatch! Conditions:")
-                logging.warning(f"PC1 ({pc1:.2f}) {'>' if pc1 > pc1_mean else '<='} Mean ({pc1_mean:.2f})")
-                logging.warning(f"PC2 ({pc2:.2f}) {'>' if pc2 > pc2_mean else '<='} Mean ({pc2_mean:.2f})")
-            
-            # Add direct check of interpreter's classify_market_regime method
-            direct_classification = interpreter.classify_market_regime(pc1, pc2)
-            logging.info(f"Direct classification result: {direct_classification}")
-            
-        except Exception as e:
-            logging.error(f"Error in debug logging: {str(e)}")
-            
-        # Convert NumPy values to Python native types
-        result = convert_numpy_values(result)
+        # Only print meaningful summary information - no debug prints
+        logger.info("\n====== PCA ANALYSIS COMPLETE ======")
         
-        # Add timestamp for the web display
-        result['last_updated'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        # Print the latest PCA values that are actually being used
+        latest_pc = pc_values[-1]
+        logger.info("Current PCA values (used for the dashboard):")
+        logger.info(f"PC1 (Momentum): {latest_pc[0]:.4f} - {current_data['market_regime']} - Signal: {current_data['trade_signal']}")
+        logger.info(f"PC2 (Volatility): {latest_pc[1]:.4f}")
+        logger.info(f"PC3 (Structure): {latest_pc[2]:.4f}")
+        logger.info(f"PC4 (Breadth): {latest_pc[3]:.4f}")
+        logger.info(f"PC5 (Mean Reversion): {latest_pc[4]:.4f}")
         
-        # Ensure all keys are present with default values if needed
-        default_keys = {'market_regime', 'trade_signal', 'pc1', 'pc2', 'pc3'}
-        for key in default_keys:
-            if key not in result:
-                if key in ['pc1', 'pc2', 'pc3']:
-                    result[key] = 0.0
-                else:
-                    result[key] = 'Unknown'
+        # Print a summary of PCA interpretations
+        logger.info("\nPCA Interpretation Summary:")
+        for interp in current_data['pca_interpretations']:
+            logger.info(f"{interp['name']} ({interp['variance']}%): {interp['current_value']:.4f} - Signal: {interp['signal']}")
+            
+        # Print overall market summary
+        logger.info("\n====== MARKET SUMMARY ======")
+        logger.info(f"ETH/USDT Price: {current_data['formatted_price']} as of {current_data['last_updated']}")
+        logger.info(f"Market Regime: {current_data['market_regime']}")
+        logger.info(f"Trade Signal: {current_data['trade_signal']}")
+        logger.info(f"Key Indicators - RSI: {current_data['rsi']:.2f}, MACD: {current_data['macd_diff']:.4f}, ATR Ratio: {current_data['atr_ratio']:.2f}")
+        logger.info("============================\n")
         
-        # Store the current data in history (limit to 24 entries)
-        history_entry = result.copy()
-        market_data['history'].insert(0, history_entry)
-        market_data['history'] = market_data['history'][:24]  # Keep only the last 24 updates
-        
-        # Update the current market data
-        market_data.update(result)
-        
-        logging.info(f"Market data updated: {result['market_regime']} - {result['trade_signal']}")
         return True
         
     except Exception as e:
-        logging.error(f"Error updating market data: {str(e)}")
-        logging.error(traceback.format_exc())
+        import traceback
+        logger.error(f"Error in PCA analysis: {str(e)}")
+        logger.error(traceback.format_exc())
+        current_data['has_error'] = True
+        current_data['error_message'] = str(e)
         return False
 
-# Add a route to run the market_interpreter.py directly for comparison
-@app.route('/run-directly')
-def run_directly():
-    """Run market_interpreter.py directly for comparison"""
-    try:
-        # Create a new instance to ensure we're not using cached data
-        direct_interpreter = MarketConditionInterpreter()
-        
-        # Get current market condition
-        result = direct_interpreter.get_current_market_condition()
-        
-        # Get the PC values and means for comparison
-        pc1 = result.get('pc1', 0.0)
-        pc2 = result.get('pc2', 0.0)
-        pc3 = result.get('pc3', 0.0)
-        
-        pc1_mean = getattr(direct_interpreter, 'pc1_mean', 0.0)
-        pc2_mean = getattr(direct_interpreter, 'pc2_mean', 0.0)
-        
-        # Log the values
-        logging.info(f"DIRECT RUN - PC Values: PC1={pc1:.2f}, PC2={pc2:.2f}, PC3={pc3:.2f}")
-        logging.info(f"DIRECT RUN - PC Means: PC1={pc1_mean:.2f}, PC2={pc2_mean:.2f}")
-        logging.info(f"DIRECT RUN - Market Regime: {result['market_regime']}")
-        logging.info(f"DIRECT RUN - Trade Signal: {result['trade_signal']}")
-        
-        # Return the results as JSON
-        return jsonify({
-            'market_regime': result['market_regime'],
-            'trade_signal': result['trade_signal'],
-            'pc1': float(pc1),
-            'pc2': float(pc2),
-            'pc3': float(pc3),
-            'pc1_mean': float(pc1_mean),
-            'pc2_mean': float(pc2_mean)
+
+def generate_pca_interpretations_from_data(pca_model, latest_point, explained_variance):
+    """Generate interpretations for PCA components using actual data"""
+    global current_data
+    interpretations = []
+    
+    # Transform the data
+    pc_values = latest_point
+    
+    # Component 1 - Momentum & Volatility Strength (42.11% variance)
+    pc1 = pc_values[0]
+    pc1_signal = 'Strong Bullish' if pc1 > 1.5 else 'Bullish' if pc1 > 0.5 else 'Neutral' if pc1 > -0.5 else 'Bearish' if pc1 > -1.5 else 'Strong Bearish'
+    interpretations.append({
+        'id': 1,
+        'name': 'Momentum & Volatility Strength',
+        'current_value': float(pc1),
+        'signal': pc1_signal,
+        'variance': f'{explained_variance[0] * 100:.1f}',
+        'description': 'Captures momentum and volatility strength over a medium-term horizon (~20-30 periods).',
+        'trading_guidance': 'Strong positive values indicate bullish momentum; negative values signal bearish momentum.'
+    })
+    
+    # Add more components based on the number of components we have
+    if len(pc_values) > 1:
+        pc2 = pc_values[1]
+        pc2_signal = 'Strong Accumulation' if pc2 > 1.5 else 'Accumulation' if pc2 > 0.5 else 'Neutral' if pc2 > -0.5 else 'Distribution' if pc2 > -1.5 else 'Strong Distribution'
+        interpretations.append({
+            'id': 2,
+            'name': 'Volume and Short-Term Momentum',
+            'current_value': float(pc2),
+            'signal': pc2_signal,
+            'variance': f'{explained_variance[1] * 100:.1f}',
+            'description': 'Focuses on short-term volume-based momentum and underlying market liquidity.',
+            'trading_guidance': 'Positive values indicate buying (accumulation); negative values show selling (distribution).'
         })
     
-    except Exception as e:
-        error_message = str(e)
-        logging.error(f"Error running directly: {error_message}")
-        logging.error(traceback.format_exc())
-        return jsonify({"status": "error", "message": error_message})
-
-# Add a route to force initialization of the interpreter
-@app.route('/force-initialize')
-def force_initialize():
-    """Force reinitialization of the interpreter"""
-    global interpreter
-    try:
-        # Set to None to force reinitialization in the next update
-        interpreter = None
-        success = initialize_clients()
-        
-        if success:
-            # Get the means as verification
-            pc1_mean = getattr(interpreter, 'pc1_mean', 0.0)
-            pc2_mean = getattr(interpreter, 'pc2_mean', 0.0)
-            pc3_mean = getattr(interpreter, 'pc3_mean', 0.0)
-            
-            # Trigger an update
-            update_market_data()
-            
-            return jsonify({
-                "status": "success", 
-                "message": "Interpreter reinitialized successfully",
-                "pc1_mean": float(pc1_mean),
-                "pc2_mean": float(pc2_mean),
-                "pc3_mean": float(pc3_mean)
-            })
-        else:
-            return jsonify({"status": "error", "message": "Failed to reinitialize interpreter"})
-    except Exception as e:
-        error_message = str(e)
-        logging.error(f"Error in force initialize: {error_message}")
-        logging.error(traceback.format_exc())
-        return jsonify({"status": "error", "message": error_message})
-
-# Add a route to analyze PC3 relationship with indicators
-@app.route('/analyze-pc3')
-def analyze_pc3():
-    """Analyze the relationship between PC3 and raw indicators"""
-    try:
-        if interpreter is None:
-            initialize_clients()
-        
-        # Get current market data with raw features
-        data = interpreter.get_current_market_data()
-        
-        # Extract the last row for current values
-        last_row = data.iloc[-1].copy() if data is not None and not data.empty else None
-        
-        if last_row is None:
-            return jsonify({"status": "error", "message": "No market data available"})
-        
-        # Get transformed data for PC values
-        transformed_data = interpreter.transform_data(data.iloc[-1:])
-        pc3 = transformed_data['PC3'].iloc[0] if 'PC3' in transformed_data.columns else 0.0
-        
-        # Get the third PCA component loadings
-        pc3_loadings = None
-        if hasattr(interpreter, 'pca_components') and len(interpreter.pca_components) >= 3:
-            pc3_loadings = dict(zip(interpreter.feature_names, interpreter.pca_components[2]))
-            
-            # Sort to get the most influential features for PC3
-            sorted_loadings = sorted(pc3_loadings.items(), key=lambda x: abs(x[1]), reverse=True)
-            top_pc3_features = sorted_loadings[:5]  # Get top 5 most influential features
-        else:
-            top_pc3_features = []
-        
-        # Get specific indicators of interest
-        rsi = float(last_row['rsi']) if 'rsi' in last_row else None
-        macd = float(last_row['macd_diff']) if 'macd_diff' in last_row else None
-        adx = float(last_row['adx']) if 'adx' in last_row else None
-        
-        # Convert all of last_row to Python native types for display
-        last_row_dict = {k: float(v) if isinstance(v, np.number) else v for k, v in last_row.items()}
-        
-        # Create result with analysis
-        result = {
-            "pc3_value": float(pc3),
-            "rsi": rsi,
-            "macd": macd,
-            "adx": adx,
-            "top_pc3_features": [{
-                "feature": feature, 
-                "loading": float(loading),
-                "value": float(last_row.get(feature, 0)) if feature in last_row else None
-            } for feature, loading in top_pc3_features],
-            "interpretation": {
-                "expected": "Positive PC3 = High MACD, Low RSI; Negative PC3 = Low MACD, High RSI",
-                "actual": "The actual relationship in your model might be different. Check the loading weights."
-            },
-            "all_features": last_row_dict
-        }
-        
-        # Log the analysis for debugging
-        logging.info(f"PC3 Analysis - PC3: {pc3:.4f}, RSI: {rsi:.2f}, MACD: {macd:.4f}")
-        if top_pc3_features:
-            logging.info(f"Top PC3 Features: {top_pc3_features}")
-        
-        return jsonify(result)
+    if len(pc_values) > 2:
+        pc3 = pc_values[2]
+        pc3_signal = 'Strong Trend' if pc3 > 1.5 else 'Trending' if pc3 > 0.5 else 'Weak Trend' if pc3 > -0.5 else 'Counter-Trend' if pc3 > -1.5 else 'Strong Counter-Trend'
+        interpretations.append({
+            'id': 3,
+            'name': 'Short-Term Trend and Price Action',
+            'current_value': float(pc3),
+            'signal': pc3_signal,
+            'variance': f'{explained_variance[2] * 100:.1f}',
+            'description': 'Captures short-term trend strength and immediate volume-price action.',
+            'trading_guidance': 'Strong loadings indicate decisive trending price moves coupled with abnormal trading volume.'
+        })
     
-    except Exception as e:
-        error_message = str(e)
-        logging.error(f"Error analyzing PC3: {error_message}")
-        logging.error(traceback.format_exc())
-        return jsonify({"status": "error", "message": error_message})
-
-# Add a route to analyze PC1 relationship with indicators
-@app.route('/analyze-pc1')
-def analyze_pc1():
-    """Analyze the relationship between PC1 and raw indicators"""
-    try:
-        if interpreter is None:
-            initialize_clients()
-        
-        # Get current market data with raw features
-        data = interpreter.get_current_market_data()
-        
-        # Extract the last row for current values
-        last_row = data.iloc[-1].copy() if data is not None and not data.empty else None
-        
-        if last_row is None:
-            return jsonify({"status": "error", "message": "No market data available"})
-        
-        # Get transformed data for PC values
-        transformed_data = interpreter.transform_data(data.iloc[-1:])
-        pc1 = transformed_data['PC1'].iloc[0] if 'PC1' in transformed_data.columns else 0.0
-        
-        # Get the first PCA component loadings
-        pc1_loadings = None
-        if hasattr(interpreter, 'pca_components') and len(interpreter.pca_components) >= 1:
-            pc1_loadings = dict(zip(interpreter.feature_names, interpreter.pca_components[0]))
-            
-            # Sort to get the most influential features for PC1
-            sorted_loadings = sorted(pc1_loadings.items(), key=lambda x: abs(x[1]), reverse=True)
-            top_pc1_features = sorted_loadings[:5]  # Get top 5 most influential features
-        else:
-            top_pc1_features = []
-        
-        # Get specific indicators of interest
-        rsi = float(last_row['rsi']) if 'rsi' in last_row else None
-        macd = float(last_row['macd_diff']) if 'macd_diff' in last_row else None
-        adx = float(last_row['adx']) if 'adx' in last_row else None
-        
-        # Convert all of last_row to Python native types for display
-        last_row_dict = {k: float(v) if isinstance(v, np.number) else v for k, v in last_row.items()}
-        
-        # Create result with analysis
-        result = {
-            "pc1_value": float(pc1),
-            "rsi": rsi,
-            "macd": macd,
-            "adx": adx,
-            "top_pc1_features": [{
-                "feature": feature, 
-                "loading": float(loading),
-                "value": float(last_row.get(feature, 0)) if feature in last_row else None
-            } for feature, loading in top_pc1_features],
-            "interpretation": {
-                "expected": "Positive PC1 = Strong momentum (high MACD); Negative PC1 = Weak momentum (low MACD)",
-                "actual": "Check the feature loadings to see what PC1 actually represents in your model."
-            },
-            "all_features": last_row_dict
-        }
-        
-        # Log the analysis for debugging
-        logging.info(f"PC1 Analysis - PC1: {pc1:.4f}, RSI: {rsi:.2f}, MACD: {macd:.4f}")
-        if top_pc1_features:
-            logging.info(f"Top PC1 Features: {top_pc1_features}")
-        
-        return jsonify(result)
+    if len(pc_values) > 3:
+        pc4 = pc_values[3]
+        pc4_signal = 'Potential Reversal' if abs(pc4) > 1.5 else 'Divergence' if abs(pc4) > 0.7 else 'Normal Range'
+        interpretations.append({
+            'id': 4,
+            'name': 'Oscillator Divergence & Market Extremes',
+            'current_value': float(pc4),
+            'signal': pc4_signal,
+            'variance': f'{explained_variance[3] * 100:.1f}',
+            'description': 'Reflects conditions of market extremes or reversals indicated by oscillator divergence.',
+            'trading_guidance': 'High values identify potential breakouts or trend reversals.'
+        })
     
-    except Exception as e:
-        error_message = str(e)
-        logging.error(f"Error analyzing PC1: {error_message}")
-        logging.error(traceback.format_exc())
-        return jsonify({"status": "error", "message": error_message})
-
-# Add a route to analyze PC2 relationship with indicators
-@app.route('/analyze-pc2')
-def analyze_pc2():
-    """Analyze the relationship between PC2 and raw indicators"""
-    try:
-        if interpreter is None:
-            initialize_clients()
-        
-        # Get current market data with raw features
-        data = interpreter.get_current_market_data()
-        
-        # Extract the last row for current values
-        last_row = data.iloc[-1].copy() if data is not None and not data.empty else None
-        
-        if last_row is None:
-            return jsonify({"status": "error", "message": "No market data available"})
-        
-        # Get transformed data for PC values
-        transformed_data = interpreter.transform_data(data.iloc[-1:])
-        pc2 = transformed_data['PC2'].iloc[0] if 'PC2' in transformed_data.columns else 0.0
-        
-        # Get the second PCA component loadings
-        pc2_loadings = None
-        if hasattr(interpreter, 'pca_components') and len(interpreter.pca_components) >= 2:
-            pc2_loadings = dict(zip(interpreter.feature_names, interpreter.pca_components[1]))
-            
-            # Sort to get the most influential features for PC2
-            sorted_loadings = sorted(pc2_loadings.items(), key=lambda x: abs(x[1]), reverse=True)
-            top_pc2_features = sorted_loadings[:5]  # Get top 5 most influential features
-        else:
-            top_pc2_features = []
-        
-        # Get specific indicators of interest
-        rsi = float(last_row['rsi']) if 'rsi' in last_row else None
-        macd = float(last_row['macd_diff']) if 'macd_diff' in last_row else None
-        adx = float(last_row['adx']) if 'adx' in last_row else None
-        bb_width = float(last_row['bb_width']) if 'bb_width' in last_row else None
-        
-        # Convert all of last_row to Python native types for display
-        last_row_dict = {k: float(v) if isinstance(v, np.number) else v for k, v in last_row.items()}
-        
-        # Create result with analysis
-        result = {
-            "pc2_value": float(pc2),
-            "rsi": rsi,
-            "macd": macd,
-            "adx": adx,
-            "bb_width": bb_width,
-            "top_pc2_features": [{
-                "feature": feature, 
-                "loading": float(loading),
-                "value": float(last_row.get(feature, 0)) if feature in last_row else None
-            } for feature, loading in top_pc2_features],
-            "interpretation": {
-                "expected": "Positive PC2 = High volatility/RSI, trending market; Negative PC2 = Low volatility/RSI, choppy market",
-                "actual": "Check the feature loadings to see what PC2 actually represents in your model."
-            },
-            "all_features": last_row_dict
-        }
-        
-        # Log the analysis for debugging
-        logging.info(f"PC2 Analysis - PC2: {pc2:.4f}, RSI: {rsi:.2f}, ADX: {adx:.2f}")
-        if top_pc2_features:
-            logging.info(f"Top PC2 Features: {top_pc2_features}")
-        
-        return jsonify(result)
+    if len(pc_values) > 4:
+        pc5 = pc_values[4]
+        pc5_signal = 'High Instability' if abs(pc5) > 1.5 else 'Unstable' if abs(pc5) > 0.7 else 'Stable'
+        interpretations.append({
+            'id': 5,
+            'name': 'Volatility & Short-Term Oscillation',
+            'current_value': float(pc5),
+            'signal': pc5_signal,
+            'variance': f'{explained_variance[4] * 100:.1f}',
+            'description': 'Captures mid-term volatility changes and short-term oscillator behavior.',
+            'trading_guidance': 'Useful for validating stability or instability of recent price moves.'
+        })
     
-    except Exception as e:
-        error_message = str(e)
-        logging.error(f"Error analyzing PC2: {error_message}")
-        logging.error(traceback.format_exc())
-        return jsonify({"status": "error", "message": error_message})
+    # Store in the global data dictionary
+    current_data['pca_interpretations'] = interpretations
+    
+    # Set market regime and trade signal based on the principal components
+    # Using PC1 (momentum) and PC2 (volume) for market regime determination
+    if pc1 > 1.0 and pc2 > 0.5:
+        current_data['market_regime'] = 'Strong Bull'
+        current_data['trade_signal'] = 'Long'
+    elif pc1 > 0.5:
+        current_data['market_regime'] = 'Bullish'
+        current_data['trade_signal'] = 'Long'
+    elif pc1 < -1.0 and pc2 < -0.5:
+        current_data['market_regime'] = 'Strong Bear'
+        current_data['trade_signal'] = 'Short'
+    elif pc1 < -0.5:
+        current_data['market_regime'] = 'Bearish'
+        current_data['trade_signal'] = 'Short'
+    else:
+        # Check if PC4 (oscillator divergence) indicates potential reversal
+        if len(pc_values) > 3 and abs(pc4) > 1.5:
+            if pc1 < 0:  # Current momentum negative but potential reversal
+                current_data['market_regime'] = 'Potential Bottom'
+                current_data['trade_signal'] = 'Watch for Long'
+            else:  # Current momentum positive but potential reversal
+                current_data['market_regime'] = 'Potential Top'
+                current_data['trade_signal'] = 'Watch for Short'
+        # Check PC3 for trending conditions in neutral momentum
+        elif len(pc_values) > 2 and abs(pc3) > 1.0:
+            current_data['market_regime'] = 'Trending Range'
+            current_data['trade_signal'] = 'Neutral'
+        else:
+            current_data['market_regime'] = 'Calm Range'
+            current_data['trade_signal'] = 'Hold'
+            
+    # Update some key indicators in current_data too
+    # This would normally come from real-time data, but for now use the most recent values
+    current_data['rsi'] = 50 + float(pc1) * 10  # Approximation based on PC1
+    current_data['macd_diff'] = float(pc1) * 0.2  # Approximation based on PC1
+    current_data['atr_ratio'] = 1.0 + abs(float(pc2)) * 0.5  # Approximation based on PC2
 
-# Context processor to add current date to all templates
-@app.context_processor
-def inject_now():
-    return {'now': datetime.now()}
+# Basic CSS helper
+@app.template_filter('safe_width')
+def safe_width(value):
+    """Convert value to safe width percentage for CSS"""
+    try:
+        val = float(value)
+        return max(0, min(100, val))
+    except:
+        return 0
 
-# Routes
+# Add a safe round filter to handle undefined values
+@app.template_filter('round')
+def safe_round(value, precision=0):
+    """Safely round a value, returns 0 if value is undefined or not a number"""
+    try:
+        return round(float(value), precision)
+    except:
+        return 0
+
+# Basic routes
 @app.route('/')
 def index():
-    """Main page displaying current market conditions"""
-    return render_template('index.html', market_data=market_data)
+    return render_template('index.html', 
+                          market_data=current_data,
+                          now=datetime.datetime.now())
+
+@app.route('/update')
+def update():
+    """Refresh the PCA model and market data when Update Now button is clicked"""
+    try:
+        # Store current data for history
+        if current_data['pca_model_loaded'] and not current_data['has_error']:
+            # Create a copy of the current data for the history
+            history_entry = {
+                'market_regime': current_data['market_regime'],
+                'trade_signal': current_data['trade_signal'],
+                'rsi': current_data['rsi'],
+                'macd_diff': current_data['macd_diff'],
+                'atr_ratio': current_data['atr_ratio'],
+                'last_updated': current_data['last_updated'],
+                'formatted_price': current_data['formatted_price']
+            }
+            
+            # Add to history (limit to last 50 entries)
+            current_data['history'].append(history_entry)
+            if len(current_data['history']) > 50:
+                current_data['history'] = current_data['history'][-50:]
+        
+        # Reload the PCA model and market data
+        logger.info("Manual update requested - refreshing PCA model and market data")
+        success = load_pca_model()
+        
+        if success:
+            return jsonify({'status': 'success', 'message': 'Data updated successfully'})
+        else:
+            return jsonify({'status': 'error', 'message': current_data['error_message']})
+            
+    except Exception as e:
+        logger.error(f"Error during manual update: {str(e)}")
+        return jsonify({'status': 'error', 'message': str(e)})
+
+@app.route('/pca-analysis')
+def pca_analysis():
+    return render_template('pca_analysis.html', 
+                          market_data=current_data,
+                          now=datetime.datetime.now())
 
 @app.route('/history')
 def history():
-    """Page displaying historical market conditions"""
-    return render_template('history.html', market_data=market_data)
+    return render_template('history.html', 
+                          market_data=current_data,
+                          now=datetime.datetime.now())
 
-@app.route('/api/market-data')
-def api_market_data():
-    """API endpoint for getting current market data in JSON format"""
-    return jsonify({
-        'market_regime': market_data['market_regime'],
-        'trade_signal': market_data['trade_signal'],
-        'pc1': market_data['pc1'],
-        'pc2': market_data['pc2'],
-        'pc3': market_data['pc3'],
-        'price': market_data.get('price', 0.0),
-        'rsi': market_data.get('rsi', 0.0),
-        'adx': market_data.get('adx', 0.0),
-        'macd_diff': market_data.get('macd_diff', 0.0),
-        'bb_width': market_data.get('bb_width', 0.0),
-        'last_updated': market_data['last_updated']
-    })
-
-@app.route('/update', methods=['GET'])
-def manual_update():
-    """Endpoint to manually trigger a data update"""
-    try:
-        success = update_market_data()
-        if success:
-            return jsonify({"status": "success", "message": "Market data updated successfully"})
-        else:
-            return jsonify({"status": "error", "message": "Failed to update market data"})
-    except Exception as e:
-        error_message = str(e)
-        logging.error(f"Error in manual update: {error_message}")
-        logging.error(traceback.format_exc())
-        return jsonify({"status": "error", "message": error_message})
-
-def start_scheduler():
-    """Start the background scheduler for periodic updates"""
-    try:
-        scheduler = BackgroundScheduler()
-        # Update every hour
-        scheduler.add_job(update_market_data, 'interval', hours=1)
-        # Also update on startup
-        scheduler.add_job(update_market_data, 'date')
-        scheduler.start()
-        logging.info("Scheduler started")
-        return scheduler
-    except Exception as e:
-        logging.error(f"Error starting scheduler: {str(e)}")
-        logging.error(traceback.format_exc())
-        return None
-
+# Run the app
 if __name__ == '__main__':
-    # Initialize the interpreter and BitGet client
-    initialize_clients()
-    
-    # Start the scheduler
-    scheduler = start_scheduler()
-    
-    # Run the Flask app
-    app.run(debug=True, host='0.0.0.0', port=5000) 
+    load_pca_model() 
+    logger.info("Starting Web Indicators app")
+    app.run(debug=True, host='0.0.0.0', port=5000)

@@ -37,9 +37,9 @@
                                 <th>Time</th>
                                 <th>Market Regime</th>
                                 <th>Trade Signal</th>
-                                <th>PC1</th>
-                                <th>PC2</th>
-                                <th>PC3</th>
+                                <th>RSI</th>
+                                <th>MACD</th>
+                                <th>ATR Ratio</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -63,9 +63,9 @@
                                         {{ entry.trade_signal }}
                                     </span>
                                 </td>
-                                <td>{{ "%.2f"|format(entry.pc1|float) }}</td>
-                                <td>{{ "%.2f"|format(entry.pc2|float) }}</td>
-                                <td>{{ "%.2f"|format(entry.pc3|float) }}</td>
+                                <td>{{ "%.1f"|format(entry.rsi|default(0)|float) }}</td>
+                                <td>{{ "%.2f"|format(entry.macd_diff|default(0)|float) }}</td>
+                                <td>{{ "%.2f"|format(entry.atr_ratio|default(1)|float) }}</td>
                             </tr>
                             {% endfor %}
                             {% if not market_data.history %}
@@ -96,21 +96,21 @@ document.addEventListener('DOMContentLoaded', function() {
             {% endfor %}
         ].reverse();
         
-        const pc1Values = [
+        const rsiValues = [
             {% for entry in market_data.history %}
-                parseFloat("{{ entry.pc1|float }}"),
+                parseFloat("{{ entry.rsi|default(50)|float }}"),
             {% endfor %}
         ].reverse();
         
-        const pc2Values = [
+        const macdValues = [
             {% for entry in market_data.history %}
-                parseFloat("{{ entry.pc2|float }}"),
+                parseFloat("{{ entry.macd_diff|default(0)|float }}"),
             {% endfor %}
         ].reverse();
         
-        const pc3Values = [
+        const atrValues = [
             {% for entry in market_data.history %}
-                parseFloat("{{ entry.pc3|float }}"),
+                parseFloat("{{ entry.atr_ratio|default(1)|float }}"),
             {% endfor %}
         ].reverse();
         
@@ -120,31 +120,34 @@ document.addEventListener('DOMContentLoaded', function() {
                 labels: timestamps,
                 datasets: [
                     {
-                        label: 'PC1 (Momentum)',
-                        data: pc1Values,
+                        label: 'RSI',
+                        data: rsiValues,
                         borderColor: 'rgba(54, 162, 235, 1)',
                         backgroundColor: 'rgba(54, 162, 235, 0.1)',
                         borderWidth: 2,
                         tension: 0.1,
-                        fill: false
+                        fill: false,
+                        yAxisID: 'y-rsi'
                     },
                     {
-                        label: 'PC2 (Volatility/RSI)',
-                        data: pc2Values,
+                        label: 'MACD',
+                        data: macdValues,
                         borderColor: 'rgba(75, 192, 192, 1)',
                         backgroundColor: 'rgba(75, 192, 192, 0.1)',
                         borderWidth: 2,
                         tension: 0.1,
-                        fill: false
+                        fill: false,
+                        yAxisID: 'y-axis'
                     },
                     {
-                        label: 'PC3 (Trend)',
-                        data: pc3Values,
+                        label: 'ATR Ratio',
+                        data: atrValues,
                         borderColor: 'rgba(153, 102, 255, 1)',
                         backgroundColor: 'rgba(153, 102, 255, 0.1)',
                         borderWidth: 2,
                         tension: 0.1,
-                        fill: false
+                        fill: false,
+                        yAxisID: 'y-axis'
                     }
                 ]
             },
@@ -152,8 +155,21 @@ document.addEventListener('DOMContentLoaded', function() {
                 responsive: true,
                 maintainAspectRatio: false,
                 scales: {
-                    y: {
-                        beginAtZero: false
+                    'y-rsi': {
+                        position: 'left',
+                        min: 0,
+                        max: 100,
+                        title: {
+                            display: true,
+                            text: 'RSI'
+                        }
+                    },
+                    'y-axis': {
+                        position: 'right',
+                        title: {
+                            display: true,
+                            text: 'MACD & ATR Ratio'
+                        }
                     },
                     x: {
                         ticks: {
